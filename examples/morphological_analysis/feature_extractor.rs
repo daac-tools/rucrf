@@ -11,8 +11,8 @@ use rucrf::Feature;
 pub struct FeatureExtractor {
     ngram_size: usize,
     pub self_feature_ids: HashMap<String, usize>,
-    pub char_feature_ids: HashMap<String, HashMap<(usize, bool, bool), usize>>,
-    pub type_feature_ids: HashMap<Vec<u8>, HashMap<(usize, bool, bool), usize>>,
+    pub char_feature_ids: HashMap<String, HashMap<(usize, usize, bool, bool), usize>>,
+    pub type_feature_ids: HashMap<Vec<u8>, HashMap<(usize, usize, bool, bool), usize>>,
     pub n_ids: usize,
 }
 
@@ -69,7 +69,7 @@ impl FeatureExtractor {
                     .from_key(ngram)
                     .or_insert_with(|| (ngram.to_string(), HashMap::new()))
                     .1
-                    .entry((i, bos, eos))
+                    .entry((i, end - start, bos, eos))
                     .or_insert(self.n_ids);
                 if feature_id == self.n_ids {
                     self.n_ids += 1;
@@ -82,7 +82,7 @@ impl FeatureExtractor {
                     .from_key(ngram)
                     .or_insert_with(|| (ngram.to_vec(), HashMap::new()))
                     .1
-                    .entry((i, bos, eos))
+                    .entry((i, end - start, bos, eos))
                     .or_insert(self.n_ids);
                 if feature_id == self.n_ids {
                     self.n_ids += 1;
@@ -125,7 +125,7 @@ impl FeatureExtractor {
                 if let Some(&feature_id) = self
                     .char_feature_ids
                     .get(ngram)
-                    .and_then(|hm| hm.get(&(i, bos, eos)))
+                    .and_then(|hm| hm.get(&(i, end - start, bos, eos)))
                 {
                     result.push(Feature::new(feature_id, 1.0));
                 }
@@ -133,7 +133,7 @@ impl FeatureExtractor {
                 if let Some(&feature_id) = self
                     .type_feature_ids
                     .get(ngram)
-                    .and_then(|hm| hm.get(&(i, bos, eos)))
+                    .and_then(|hm| hm.get(&(i, end - start, bos, eos)))
                 {
                     result.push(Feature::new(feature_id, 1.0));
                 }
@@ -147,9 +147,9 @@ impl Decode for FeatureExtractor {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let ngram_size = Decode::decode(decoder)?;
         let self_feature_ids: Vec<(String, usize)> = Decode::decode(decoder)?;
-        let char_feature_ids: Vec<(String, Vec<((usize, bool, bool), usize)>)> =
+        let char_feature_ids: Vec<(String, Vec<((usize, usize, bool, bool), usize)>)> =
             Decode::decode(decoder)?;
-        let type_feature_ids: Vec<(Vec<u8>, Vec<((usize, bool, bool), usize)>)> =
+        let type_feature_ids: Vec<(Vec<u8>, Vec<((usize, usize, bool, bool), usize)>)> =
             Decode::decode(decoder)?;
         let n_ids = Decode::decode(decoder)?;
         Ok(Self {
@@ -173,12 +173,12 @@ impl Encode for FeatureExtractor {
         Encode::encode(&self.ngram_size, encoder)?;
         let self_feature_ids: Vec<(String, usize)> =
             self.self_feature_ids.clone().into_iter().collect();
-        let char_feature_ids: Vec<(String, Vec<((usize, bool, bool), usize)>)> = self
+        let char_feature_ids: Vec<(String, Vec<((usize, usize, bool, bool), usize)>)> = self
             .char_feature_ids
             .iter()
             .map(|(k, v)| (k.clone(), v.clone().into_iter().collect()))
             .collect();
-        let type_feature_ids: Vec<(Vec<u8>, Vec<((usize, bool, bool), usize)>)> = self
+        let type_feature_ids: Vec<(Vec<u8>, Vec<((usize, usize, bool, bool), usize)>)> = self
             .type_feature_ids
             .iter()
             .map(|(k, v)| (k.clone(), v.clone().into_iter().collect()))
