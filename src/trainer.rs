@@ -3,14 +3,17 @@ use std::thread;
 
 use alloc::vec::Vec;
 
-use argmin::core::observers::{ObserverMode, SlogLogger};
-use argmin::core::{CostFunction, Executor, Gradient};
-use argmin::solver::linesearch::condition::ArmijoCondition;
-use argmin::solver::linesearch::BacktrackingLineSearch;
-use argmin::solver::linesearch::MoreThuenteLineSearch;
-use argmin::solver::quasinewton::LBFGS;
-use hashbrown::hash_map::RawEntryMut;
-use hashbrown::HashMap;
+use argmin::{
+    core::{
+        observers::{ObserverMode, SlogLogger},
+        CostFunction, Executor, Gradient,
+    },
+    solver::{
+        linesearch::{condition::ArmijoCondition, BacktrackingLineSearch, MoreThuenteLineSearch},
+        quasinewton::LBFGS,
+    },
+};
+use hashbrown::{hash_map::RawEntryMut, HashMap};
 
 use crate::forward_backward;
 use crate::lattice::Lattice;
