@@ -12,12 +12,12 @@ keywords = ["crf"]
 categories = ["science", "algorithms", "no-std"]
 
 [dependencies]
-bincode = "2.0.0-rc.1"
-hashbrown = "0.12"
+bincode = "2.0.0-rc.1"  # MIT
+hashbrown = "0.12"  # MIT or Apache-2.0
 
-argmin = { git = "https://github.com/argmin-rs/argmin", optional = true }
-argmin-math = { git = "https://github.com/argmin-rs/argmin", optional = true }
-crossbeam-channel = { version = "0.5.6", optional = true }
+argmin = { git = "https://github.com/argmin-rs/argmin", optional = true }  # MIT or Apache-2.0
+argmin-math = { git = "https://github.com/argmin-rs/argmin", optional = true }  # MIT or Apache-2.0
+crossbeam-channel = { version = "0.5.6", optional = true }  # MIT or Apache-2.0
 
 [features]
 default = ["alloc"]
