@@ -1,3 +1,4 @@
+#[cfg(feature = "train")]
 macro_rules! hashmap {
     ( $($k:expr => $v:expr,)* ) => {
         {
@@ -14,6 +15,7 @@ macro_rules! hashmap {
     };
 }
 
+#[cfg(feature = "train")]
 macro_rules! assert_alpha_beta {
     ( $expected:expr, $result:expr ) => {
         for (i, es) in $expected.iter().enumerate() {
@@ -28,5 +30,7 @@ macro_rules! assert_alpha_beta {
     };
 }
 
+#[cfg(feature = "train")]
 pub(crate) use assert_alpha_beta;
+#[cfg(feature = "train")]
 pub(crate) use hashmap;

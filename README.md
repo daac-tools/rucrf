@@ -7,7 +7,7 @@
 ```rust
 use std::num::NonZeroUsize;
 
-use rucrf::{Edge, Feature, Lattice, Regularization, Trainer};
+use rucrf::{Edge, Feature, Lattice, Trainer};
 
 // Train:
 // 京(kyo) 都(to)
