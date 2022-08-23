@@ -39,7 +39,7 @@ struct Args {
     dict: Option<PathBuf>,
 
     /// Number of threads
-    #[clap(long, value_parser)]
+    #[clap(long, value_parser, default_value = "1")]
     n_threads: usize,
 }
 

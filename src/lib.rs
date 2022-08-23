@@ -1,7 +1,6 @@
 //! # rucrf
 //!
 //! Conditional Random Fields (CRFs) implemented in pure Rust
-//!
 #![cfg_attr(
     all(feature = "std", feature = "tag-prediction"),
     doc = "

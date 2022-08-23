@@ -2,14 +2,20 @@ use std::num::NonZeroUsize;
 
 use daachorse::DoubleArrayAhoCorasick;
 use hashbrown::{HashMap, HashSet};
-use rucrf::{Edge, Lattice, Trainer};
+use rucrf::{Edge, Lattice, Regularization, Trainer};
 use vaporetto::Sentence;
 
 use crate::feature_extractor::FeatureExtractor;
 use crate::MAModel;
 
 pub fn train(sentences: &[Sentence], dict: &[Sentence], n_threads: usize) -> MAModel {
-    let trainer = Trainer::new().n_threads(n_threads).unwrap();
+    let trainer = Trainer::new()
+        .n_threads(n_threads)
+        .unwrap()
+        .regularization(Regularization::L1, 0.1)
+        .unwrap()
+        .max_iter(300)
+        .unwrap();
 
     let mut surf_label_map = HashMap::new();
     let mut label_tag_map = vec![];
@@ -94,6 +100,52 @@ pub fn train(sentences: &[Sentence], dict: &[Sentence], n_threads: usize) -> MAM
     }
 
     let model = trainer.train(&lattices);
+
+    // Removes unnecessary feature n-grams
+    let mut removable_ids = vec![true; feature_extractor.n_ids];
+    for hm in &model.unigram_fids {
+        for &feature_id in hm.keys() {
+            removable_ids[feature_id] = false;
+        }
+    }
+    let mut new_self_feature_ids = HashMap::new();
+    for (s, id) in feature_extractor.self_feature_ids {
+        if removable_ids[id] {
+            continue;
+        }
+        new_self_feature_ids.insert(s, id);
+    }
+    feature_extractor.self_feature_ids = new_self_feature_ids;
+    let mut new_char_feature_ids = HashMap::new();
+    for (s, hm) in feature_extractor.char_feature_ids {
+        let mut new_hm = HashMap::new();
+        for (k, id) in hm {
+            if removable_ids[id] {
+                continue;
+            }
+            new_hm.insert(k, id);
+        }
+        if new_hm.is_empty() {
+            continue;
+        }
+        new_char_feature_ids.insert(s, new_hm);
+    }
+    feature_extractor.char_feature_ids = new_char_feature_ids;
+    let mut new_type_feature_ids = HashMap::new();
+    for (s, hm) in feature_extractor.type_feature_ids {
+        let mut new_hm = HashMap::new();
+        for (k, id) in hm {
+            if removable_ids[id] {
+                continue;
+            }
+            new_hm.insert(k, id);
+        }
+        if new_hm.is_empty() {
+            continue;
+        }
+        new_type_feature_ids.insert(s, new_hm);
+    }
+    feature_extractor.type_feature_ids = new_type_feature_ids;
 
     for s in dict {
         for token in s.iter_tokens() {

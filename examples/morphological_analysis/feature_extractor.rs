@@ -10,10 +10,10 @@ use rucrf::Feature;
 #[derive(Debug)]
 pub struct FeatureExtractor {
     ngram_size: usize,
-    self_feature_ids: HashMap<String, usize>,
-    char_feature_ids: HashMap<String, HashMap<(usize, bool, bool), usize>>,
-    type_feature_ids: HashMap<Vec<u8>, HashMap<(usize, bool, bool), usize>>,
-    n_ids: usize,
+    pub self_feature_ids: HashMap<String, usize>,
+    pub char_feature_ids: HashMap<String, HashMap<(usize, bool, bool), usize>>,
+    pub type_feature_ids: HashMap<Vec<u8>, HashMap<(usize, bool, bool), usize>>,
+    pub n_ids: usize,
 }
 
 impl FeatureExtractor {
