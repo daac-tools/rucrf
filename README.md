@@ -1,6 +1,10 @@
 # rucrf: Conditional Random Fields implemented in pure Rust
 
 *rucrf* contains a trainer and an estimator for Conditional Random Fields (CRFs).
+This library supports:
+- [x] lattices with variable length edges,
+- [x] L1 and L2 regularization, and
+- [x] multi-threading during training.
 
 ## Examples
 
