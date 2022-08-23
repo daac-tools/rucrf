@@ -24,3 +24,13 @@ default = ["alloc"]
 alloc = []
 std = ["alloc"]
 train = ["std", "argmin", "argmin-math", "crossbeam-channel"]
+
+[dev-dependencies]
+clap = { version = "3.2", features = ["derive"] }
+daachorse = "1.0.0"
+vaporetto = "0.5.1"
+zstd = "0.11.2"
+
+[[example]]
+name = "morphological_analysis"
+required-features = ["train"]
