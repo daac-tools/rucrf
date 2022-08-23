@@ -24,6 +24,7 @@ pub struct Model {
 
 impl Model {
     /// Searches the best path of the given lattice.
+    #[must_use]
     pub fn search_best_path(&self, lattice: &Lattice) -> Vec<Edge> {
         let mut best_scores = vec![vec![]; lattice.nodes().len()];
         best_scores[lattice.nodes().len() - 1].push((0, 0, 0, 0.0));

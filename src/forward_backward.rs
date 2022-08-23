@@ -117,6 +117,7 @@ pub fn calculate_loss(
     log_prob
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn update_gradient(
     lattice: &Lattice,
     weights: &[f64],

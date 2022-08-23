@@ -144,6 +144,7 @@ impl<'a> Gradient for LatticesLoss<'a> {
                             &mut local_gradients,
                         );
                     }
+                    #[allow(clippy::significant_drop_in_scrutinee)]
                     for (y, x) in gradients.lock().unwrap().iter_mut().zip(local_gradients) {
                         *y += x;
                     }
@@ -194,8 +195,8 @@ impl Trainer {
 
     /// Sets the maximum number of iterations
     pub fn max_iter(mut self, max_iter: u64) -> Result<Self> {
-        if max_iter <= 0 {
-            return Err("max_iter must be greater than or equal to 1");
+        if max_iter == 0 {
+            return Err("max_iter must not be 0");
         }
         self.max_iter = max_iter;
         Ok(self)
@@ -213,8 +214,8 @@ impl Trainer {
 
     /// Sets the number of threads
     pub fn n_threads(mut self, n_threads: usize) -> Result<Self> {
-        if n_threads <= 0 {
-            return Err("n_threads must be greater than or equal to 1");
+        if n_threads == 0 {
+            return Err("n_threads must not be 0");
         }
         self.n_threads = n_threads;
         Ok(self)
@@ -384,5 +385,11 @@ impl Trainer {
             unigram_fids,
             bigram_fids,
         }
+    }
+}
+
+impl Default for Trainer {
+    fn default() -> Self {
+        Self::new()
     }
 }

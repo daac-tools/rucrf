@@ -19,21 +19,24 @@ impl Edge {
     /// * `target` - Index of the node to which the edge points.
     /// * `label` - Label this edge holds.
     #[inline(always)]
+    #[must_use]
     pub fn new(target: usize, label: Option<NonZeroUsize>) -> Self {
         Self {
             target,
-            label: label.map_or(0, |x| x.get()),
+            label: label.map_or(0, NonZeroUsize::get),
         }
     }
 
     /// Gets the target value
     #[inline(always)]
+    #[must_use]
     pub const fn target(&self) -> usize {
         self.target
     }
 
     /// Gets the label value
     #[inline(always)]
+    #[must_use]
     pub const fn label(&self) -> Option<NonZeroUsize> {
         NonZeroUsize::new(self.label)
     }
@@ -64,7 +67,8 @@ pub struct Feature {
 impl Feature {
     /// Creates a new feature with its ID and value
     #[inline(always)]
-    pub fn new(feature_id: usize, value: f64) -> Self {
+    #[must_use]
+    pub const fn new(feature_id: usize, value: f64) -> Self {
         Self { feature_id, value }
     }
 }
@@ -88,6 +92,7 @@ impl Lattice {
     /// # Panics
     ///
     /// Target of each edge must point backward.
+    #[must_use]
     pub fn new(edges: &[Edge]) -> Self {
         assert!(!edges.is_empty());
         let nodes_len = edges.last().unwrap().target() + 1;
@@ -138,7 +143,7 @@ impl Lattice {
         assert!(start < end);
         self.features
             .entry((start, end))
-            .or_insert_with(|| vec![])
+            .or_insert_with(Vec::new)
             .push(feature);
     }
 
@@ -148,7 +153,7 @@ impl Lattice {
     }
 
     #[inline(always)]
-    pub(crate) fn features(&self) -> &HashMap<(usize, usize), Vec<Feature>> {
+    pub(crate) const fn features(&self) -> &HashMap<(usize, usize), Vec<Feature>> {
         &self.features
     }
 }
