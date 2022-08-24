@@ -2,7 +2,7 @@
 //!
 //! Conditional Random Fields (CRFs) implemented in pure Rust
 #![cfg_attr(
-    all(feature = "std", feature = "tag-prediction"),
+    all(feature = "std", feature = "train"),
     doc = "
 ## Examples
 

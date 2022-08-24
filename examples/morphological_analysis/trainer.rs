@@ -38,6 +38,23 @@ pub fn train(sentences: &[Sentence], dict: &[Sentence], n_threads: usize) -> MAM
                 .insert(label);
         }
     }
+    for s in dict {
+        for token in s.iter_tokens() {
+            let tag = token
+                .tags()
+                .get(0)
+                .and_then(|tag| tag.as_ref().map(|tag| tag.as_ref()))
+                .unwrap_or("");
+            let label = *tag_label_map.entry(tag).or_insert(label_tag_map.len() + 1);
+            if label == label_tag_map.len() + 1 {
+                label_tag_map.push(tag.to_string());
+            }
+            surf_label_map
+                .entry(token.surface())
+                .or_insert_with(|| HashSet::new())
+                .insert(label);
+        }
+    }
 
     let mut surfaces = vec![];
     let mut labels = vec![];
@@ -146,31 +163,6 @@ pub fn train(sentences: &[Sentence], dict: &[Sentence], n_threads: usize) -> MAM
         new_type_feature_ids.insert(s, new_hm);
     }
     feature_extractor.type_feature_ids = new_type_feature_ids;
-
-    for s in dict {
-        for token in s.iter_tokens() {
-            let tag = token
-                .tags()
-                .get(0)
-                .and_then(|tag| tag.as_ref().map(|tag| tag.as_ref()))
-                .unwrap_or("");
-            let label = *tag_label_map.entry(tag).or_insert(label_tag_map.len() + 1);
-            if label == label_tag_map.len() + 1 {
-                label_tag_map.push(tag.to_string());
-            }
-            surf_label_map
-                .entry(token.surface())
-                .or_insert_with(|| HashSet::new())
-                .insert(label);
-        }
-    }
-
-    let mut surfaces = vec![];
-    let mut labels = vec![];
-    for (s, ls) in surf_label_map {
-        surfaces.push(s.to_string());
-        labels.push(ls.into_iter().collect::<Vec<usize>>());
-    }
 
     MAModel {
         model,
