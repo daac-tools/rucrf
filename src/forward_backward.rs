@@ -115,7 +115,7 @@ pub fn calculate_loss(
         if let Some(prev_fid) = prev_fid {
             let prev_fid = usize::try_from(prev_fid.get()).unwrap();
             if let Some(&fid) = bigram_fids[prev_fid].get(&0) {
-                log_prob -= weights[usize::from_u32(fid)]
+                log_prob -= weights[usize::from_u32(fid)];
             }
         }
     }
@@ -173,6 +173,6 @@ pub fn update_gradient(
         prev_label = Some(edge.label);
     }
     apply_bigram(prev_label, None, provider, bigram_fids, |fid| {
-        gradients[usize::from_u32(fid)] -= 1.0
+        gradients[usize::from_u32(fid)] -= 1.0;
     });
 }

@@ -14,18 +14,21 @@ pub struct Edge {
 impl Edge {
     /// Creates a new edge.
     #[inline(always)]
+    #[must_use]
     pub const fn new(target: usize, label: NonZeroU32) -> Self {
         Self { target, label }
     }
 
     /// Returns an index of the target node.
     #[inline(always)]
+    #[must_use]
     pub const fn target(&self) -> usize {
         self.target
     }
 
     /// Returns a label of this edge.
     #[inline(always)]
+    #[must_use]
     pub const fn label(&self) -> NonZeroU32 {
         self.label
     }
@@ -81,6 +84,7 @@ impl Lattice {
 
     /// Returns a list of nodes.
     #[inline(always)]
+    #[must_use]
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }

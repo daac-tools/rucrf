@@ -83,6 +83,11 @@ impl RawModel {
     ///
     /// This process integrates the features, so that each edge has three items: a uni-gram cost,
     /// a left-connection ID, and a right-connection ID.
+    ///
+    /// # Panics
+    ///
+    /// Generated left/right bi-gram ID must be smaller than 2^32.
+    #[must_use]
     pub fn merge(&self) -> MergedModel {
         let mut left_ids = HashMap::new();
         let mut right_ids = HashMap::new();
@@ -107,7 +112,7 @@ impl RawModel {
                     .or_insert_with(|| (left.to_vec(), new_id))
                     .1;
                 if id == new_id {
-                    left_ids_rev.push(left.to_vec())
+                    left_ids_rev.push(left.to_vec());
                 }
                 id
             };
@@ -120,7 +125,7 @@ impl RawModel {
                     .or_insert_with(|| (right.to_vec(), new_id))
                     .1;
                 if id == new_id {
-                    right_ids_rev.push(right.to_vec())
+                    right_ids_rev.push(right.to_vec());
                 }
                 id
             };

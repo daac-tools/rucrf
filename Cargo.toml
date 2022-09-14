@@ -2,6 +2,7 @@
 name = "rucrf"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.56"
 authors = ["Koichi Akabe <vbkaisetsu@gmail.com>"]
 description = "Conditional Random Fields implemented in pure Rust"
 license = "MIT OR Apache-2.0"

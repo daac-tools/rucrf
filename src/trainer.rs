@@ -190,6 +190,7 @@ pub struct Trainer {
 
 impl Trainer {
     /// Creates a new trainer.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             max_iter: 100,
@@ -357,6 +358,8 @@ impl Trainer {
     }
 
     /// Trains a model from the given dataset.
+    #[allow(clippy::missing_panics_doc)]
+    #[must_use]
     pub fn train(&self, lattices: &[Lattice], mut provider: FeatureProvider) -> RawModel {
         let mut unigram_fids = vec![];
         let mut bigram_fids = vec![];
@@ -470,7 +473,7 @@ impl Trainer {
                 *fid = fid.filter(|fid| {
                     !new_bigram_fids
                         .get(usize::from_u32(fid.get()))
-                        .map_or(false, |hm| hm.is_empty())
+                        .map_or(false, HashMap::is_empty)
                 });
             }
             for fid in &mut feature_set.right {

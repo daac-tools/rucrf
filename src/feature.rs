@@ -70,6 +70,7 @@ pub struct FeatureSet {
 impl FeatureSet {
     /// Creates a new [`FeatureSet`].
     #[inline(always)]
+    #[must_use]
     pub fn new(
         unigram: &[NonZeroU32],
         left: &[Option<NonZeroU32>],
@@ -84,18 +85,21 @@ impl FeatureSet {
 
     /// Gets uni-gram feature IDs.
     #[inline(always)]
+    #[must_use]
     pub fn unigram(&self) -> &[NonZeroU32] {
         &self.unigram
     }
 
     /// Gets left bi-gram feature IDs
     #[inline(always)]
+    #[must_use]
     pub fn left(&self) -> &[Option<NonZeroU32>] {
         &self.left
     }
 
     /// Gets right bi-gram feature IDs.
     #[inline(always)]
+    #[must_use]
     pub fn right(&self) -> &[Option<NonZeroU32>] {
         &self.right
     }
@@ -110,23 +114,30 @@ pub struct FeatureProvider {
 impl FeatureProvider {
     /// Creates a new [`FeatureProvider`].
     #[inline(always)]
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Returns `true` if the manager has no item.
     #[inline(always)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.feature_sets.is_empty()
     }
 
     /// Returns the number of items.
     #[inline(always)]
+    #[must_use]
     pub fn len(&self) -> usize {
         self.feature_sets.len()
     }
 
     /// Adds a feature set and returns its ID.
+    ///
+    /// # Panics
+    ///
+    /// The number of features must be less than 2^32 - 1.
     #[inline(always)]
     pub fn add_feature_set(&mut self, feature_set: FeatureSet) -> NonZeroU32 {
         self.feature_sets.push(feature_set);
