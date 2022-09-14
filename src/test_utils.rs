@@ -1,4 +1,8 @@
-#[cfg(feature = "train")]
+use core::num::NonZeroU32;
+
+use crate::feature::{FeatureProvider, FeatureSet};
+use crate::lattice::{Edge, Lattice};
+
 macro_rules! hashmap {
     ( $($k:expr => $v:expr,)* ) => {
         {
@@ -16,21 +20,88 @@ macro_rules! hashmap {
 }
 
 #[cfg(feature = "train")]
-macro_rules! assert_alpha_beta {
-    ( $expected:expr, $result:expr ) => {
-        for (i, es) in $expected.iter().enumerate() {
-            let mut es = es.clone();
-            es.sort_unstable_by_key(|&(a, b, _)| (a, b));
-            for (j, e) in es.iter().enumerate() {
-                assert_eq!(e.0, $result[i][j].0);
-                assert_eq!(e.1, $result[i][j].1);
-                assert!((e.2 - $result[i][j].2).abs() < f64::EPSILON);
-            }
+macro_rules! logsumexp {
+    ( $($x:expr,)* ) => {
+        {
+            let mut y = f64::NEG_INFINITY;
+            $(
+                y = $crate::math::logsumexp(y, $x);
+            )*
+            y
         }
+    };
+    ( $($x:expr),* ) => {
+        logsumexp!($( $x, )*)
     };
 }
 
-#[cfg(feature = "train")]
-pub(crate) use assert_alpha_beta;
-#[cfg(feature = "train")]
+pub fn generate_test_lattice() -> Lattice {
+    let mut lattice = Lattice::new(5).unwrap();
+    lattice
+        .add_edge(0, Edge::new(1, NonZeroU32::new(1).unwrap()))
+        .unwrap();
+    lattice
+        .add_edge(1, Edge::new(2, NonZeroU32::new(2).unwrap()))
+        .unwrap();
+    lattice
+        .add_edge(2, Edge::new(4, NonZeroU32::new(3).unwrap()))
+        .unwrap();
+    lattice
+        .add_edge(4, Edge::new(5, NonZeroU32::new(4).unwrap()))
+        .unwrap();
+    lattice
+        .add_edge(0, Edge::new(2, NonZeroU32::new(5).unwrap()))
+        .unwrap();
+    lattice
+        .add_edge(2, Edge::new(3, NonZeroU32::new(6).unwrap()))
+        .unwrap();
+    lattice
+        .add_edge(3, Edge::new(4, NonZeroU32::new(7).unwrap()))
+        .unwrap();
+    lattice
+}
+
+pub fn generate_test_feature_provider() -> FeatureProvider {
+    let mut feature_provider = FeatureProvider::new();
+    feature_provider.add_feature_set(FeatureSet::new(
+        &[NonZeroU32::new(1).unwrap(), NonZeroU32::new(2).unwrap()],
+        &[NonZeroU32::new(1), NonZeroU32::new(2)],
+        &[NonZeroU32::new(1), NonZeroU32::new(2)],
+    ));
+    feature_provider.add_feature_set(FeatureSet::new(
+        &[NonZeroU32::new(3).unwrap(), NonZeroU32::new(4).unwrap()],
+        &[NonZeroU32::new(3), NonZeroU32::new(4)],
+        &[NonZeroU32::new(4), NonZeroU32::new(3)],
+    ));
+    feature_provider.add_feature_set(FeatureSet::new(
+        &[NonZeroU32::new(1).unwrap(), NonZeroU32::new(3).unwrap()],
+        &[NonZeroU32::new(1), NonZeroU32::new(3)],
+        &[NonZeroU32::new(2), NonZeroU32::new(3)],
+    ));
+    feature_provider.add_feature_set(FeatureSet::new(
+        &[NonZeroU32::new(4).unwrap(), NonZeroU32::new(1).unwrap()],
+        &[NonZeroU32::new(1), NonZeroU32::new(4)],
+        &[NonZeroU32::new(2), NonZeroU32::new(1)],
+    ));
+    feature_provider.add_feature_set(FeatureSet::new(
+        &[NonZeroU32::new(2).unwrap(), NonZeroU32::new(3).unwrap()],
+        &[NonZeroU32::new(2), NonZeroU32::new(3)],
+        &[NonZeroU32::new(2), NonZeroU32::new(2)],
+    ));
+    feature_provider.add_feature_set(FeatureSet::new(
+        &[NonZeroU32::new(1).unwrap(), NonZeroU32::new(4).unwrap()],
+        &[NonZeroU32::new(2), NonZeroU32::new(4)],
+        &[NonZeroU32::new(4), NonZeroU32::new(1)],
+    ));
+    feature_provider.add_feature_set(FeatureSet::new(
+        &[NonZeroU32::new(2).unwrap(), NonZeroU32::new(3).unwrap()],
+        &[NonZeroU32::new(4), NonZeroU32::new(1)],
+        &[NonZeroU32::new(3), NonZeroU32::new(4)],
+    ));
+    feature_provider
+}
+
 pub(crate) use hashmap;
+
+#[cfg(feature = "train")]
+pub(crate) use logsumexp;

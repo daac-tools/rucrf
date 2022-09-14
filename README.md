@@ -9,9 +9,9 @@ This library supports:
 ## Examples
 
 ```rust
-use std::num::NonZeroUsize;
+use std::num::NonZeroU32;
 
-use rucrf::{Edge, Feature, Lattice, Trainer};
+use rucrf::{Edge, FeatureProvider, FeatureSet, Lattice, Model, Trainer};
 
 // Train:
 // 京(kyo) 都(to)
@@ -23,97 +23,111 @@ use rucrf::{Edge, Feature, Lattice, Trainer};
 // 水(mizu) の(no) 都(miyako)
 //
 // Features:
-// 京: 0, 都: 1, 東: 2, 浜: 3, の: 4, 水: 5
+// 京: 1, 都: 2, 東: 3, 浜: 4, の: 5, 水: 6
 //
 // Labels:
-// kyo: 1, to: 2, kei: 3, hin: 4, no: 5, mikako: 6, mizu: 7
+// 京kyo: 1, 都to: 2, 東to: 3,  京kei: 4, 浜hin: 5, のno: 6, 都mikako: 7, 水mizu: 8
+
+let mut provider = FeatureProvider::new();
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(1).unwrap()],
+    &[NonZeroU32::new(1)],
+    &[NonZeroU32::new(1)],
+));
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(2).unwrap()],
+    &[NonZeroU32::new(2)],
+    &[NonZeroU32::new(2)],
+));
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(3).unwrap()],
+    &[NonZeroU32::new(3)],
+    &[NonZeroU32::new(3)],
+));
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(1).unwrap()],
+    &[NonZeroU32::new(4)],
+    &[NonZeroU32::new(4)],
+));
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(4).unwrap()],
+    &[NonZeroU32::new(5)],
+    &[NonZeroU32::new(5)],
+));
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(5).unwrap()],
+    &[NonZeroU32::new(6)],
+    &[NonZeroU32::new(6)],
+));
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(2).unwrap()],
+    &[NonZeroU32::new(7)],
+    &[NonZeroU32::new(7)],
+));
+provider.add_feature_set(FeatureSet::new(
+    &[NonZeroU32::new(6).unwrap()],
+    &[NonZeroU32::new(8)],
+    &[NonZeroU32::new(8)],
+));
 
 let mut lattices = vec![];
 
 // 京都 (kyo to)
-let mut lattice = Lattice::new(&[
-    Edge::new(1, NonZeroUsize::new(1)),
-    Edge::new(2, NonZeroUsize::new(2)),
-]);
+let mut lattice = Lattice::new(2)?;
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(1).unwrap()))?; // kyo
+lattice.add_edge(1, Edge::new(2, NonZeroU32::new(2).unwrap()))?; // to
 
-// add other edges
-lattice.add_branch(0, Edge::new(1, NonZeroUsize::new(3))); // kei
-lattice.add_branch(1, Edge::new(2, NonZeroUsize::new(6))); // miyako
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(4).unwrap()))?; // kei
+lattice.add_edge(1, Edge::new(2, NonZeroU32::new(7).unwrap()))?; // miyako
 
-// add features
-lattice.add_feature(0, 1, Feature::new(0, 1.0));
-lattice.add_feature(1, 2, Feature::new(1, 1.0));
 lattices.push(lattice);
 
 // 東京 (to kyo)
-let mut lattice = Lattice::new(&[
-    Edge::new(1, NonZeroUsize::new(2)),
-    Edge::new(2, NonZeroUsize::new(1)),
-]);
+let mut lattice = Lattice::new(2)?;
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(3).unwrap()))?; // to
+lattice.add_edge(1, Edge::new(2, NonZeroU32::new(1).unwrap()))?; // kyo
 
-// add other edges
-lattice.add_branch(1, Edge::new(2, NonZeroUsize::new(3))); // kei
+lattice.add_edge(1, Edge::new(2, NonZeroU32::new(4).unwrap()))?; // kei
 
-// add features
-lattice.add_feature(0, 1, Feature::new(2, 1.0));
-lattice.add_feature(1, 2, Feature::new(0, 1.0));
 lattices.push(lattice);
 
 // 京浜 (kei hin)
-let mut lattice = Lattice::new(&[
-    Edge::new(1, NonZeroUsize::new(3)),
-    Edge::new(2, NonZeroUsize::new(4)),
-]);
+let mut lattice = Lattice::new(2)?;
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(4).unwrap()))?; // kei
+lattice.add_edge(1, Edge::new(2, NonZeroU32::new(5).unwrap()))?; // hin
 
-// add other edges
-lattice.add_branch(0, Edge::new(1, NonZeroUsize::new(1))); // kyo
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(1).unwrap()))?; // kyo
 
-// add features
-lattice.add_feature(0, 1, Feature::new(0, 1.0));
-lattice.add_feature(1, 2, Feature::new(3, 1.0));
 lattices.push(lattice);
 
 // 京の都 (kyo no miyako)
-let mut lattice = Lattice::new(&[
-    Edge::new(1, NonZeroUsize::new(1)),
-    Edge::new(2, NonZeroUsize::new(5)),
-    Edge::new(3, NonZeroUsize::new(6)),
-]);
+let mut lattice = Lattice::new(3)?;
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(1).unwrap()))?; // kyo
+lattice.add_edge(1, Edge::new(2, NonZeroU32::new(6).unwrap()))?; // no
+lattice.add_edge(2, Edge::new(3, NonZeroU32::new(7).unwrap()))?; // miyako
 
-// add other edges
-lattice.add_branch(0, Edge::new(1, NonZeroUsize::new(3))); // kei
-lattice.add_branch(2, Edge::new(3, NonZeroUsize::new(2))); // to
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(4).unwrap()))?; // kei
+lattice.add_edge(2, Edge::new(3, NonZeroU32::new(2).unwrap()))?; // to
 
-// add features
-lattice.add_feature(0, 1, Feature::new(0, 1.0));
-lattice.add_feature(1, 2, Feature::new(4, 1.0));
-lattice.add_feature(2, 3, Feature::new(1, 1.0));
 lattices.push(lattice);
 
 // Generates a model
 let trainer = Trainer::new();
-let model = trainer.train(&lattices);
+let model = trainer.train(&lattices, provider);
 
 // 水の都 (mizu no miyako)
-let mut lattice = Lattice::new(&[Edge::new(3, None)]);
+let mut lattice = Lattice::new(3)?;
+lattice.add_edge(0, Edge::new(1, NonZeroU32::new(8).unwrap()))?; // mizu
+lattice.add_edge(1, Edge::new(2, NonZeroU32::new(6).unwrap()))?; // no
+lattice.add_edge(2, Edge::new(3, NonZeroU32::new(2).unwrap()))?; // to
+lattice.add_edge(2, Edge::new(3, NonZeroU32::new(7).unwrap()))?; // miyako
 
-// add edges
-lattice.add_branch(0, Edge::new(1, NonZeroUsize::new(7))); // mizu
-lattice.add_branch(1, Edge::new(2, NonZeroUsize::new(5))); // no
-lattice.add_branch(2, Edge::new(3, NonZeroUsize::new(2))); // to
-lattice.add_branch(2, Edge::new(3, NonZeroUsize::new(6))); // miyako
-
-// add features
-lattice.add_feature(0, 1, Feature::new(5, 1.0));
-lattice.add_feature(1, 2, Feature::new(4, 1.0));
-lattice.add_feature(2, 3, Feature::new(1, 1.0));
-
-let path = model.search_best_path(&lattice);
+let (path, _) = model.search_best_path(&lattice);
 
 assert_eq!(vec![
-    Edge::new(1, NonZeroUsize::new(7)),
-    Edge::new(2, NonZeroUsize::new(5)),
-    Edge::new(3, NonZeroUsize::new(6)),
+    Edge::new(1, NonZeroU32::new(8).unwrap()),
+    Edge::new(2, NonZeroU32::new(6).unwrap()),
+    Edge::new(3, NonZeroU32::new(7).unwrap()),
 ], path);
 ```
 

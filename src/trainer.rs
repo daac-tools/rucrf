@@ -1,3 +1,4 @@
+use core::num::NonZeroU32;
 use std::sync::Mutex;
 use std::thread;
 
@@ -13,17 +14,20 @@ use argmin::{
         quasinewton::LBFGS,
     },
 };
-use hashbrown::{hash_map::RawEntryMut, HashMap};
+use hashbrown::{hash_map::RawEntryMut, HashMap, HashSet};
 
+use crate::errors::Result;
 use crate::forward_backward;
 use crate::lattice::Lattice;
-use crate::model::Model;
-use crate::Result;
+use crate::model::RawModel;
+use crate::utils::FromU32;
+use crate::{errors::RucrfError, feature::FeatureProvider};
 
 struct LatticesLoss<'a> {
     lattices: &'a [Lattice],
-    unigram_fids: Vec<HashMap<usize, usize>>,
-    bigram_fids: Vec<HashMap<usize, usize>>,
+    provider: &'a FeatureProvider,
+    unigram_fids: Vec<u32>,
+    bigram_fids: Vec<HashMap<u32, u32>>,
     n_threads: usize,
     l2_lambda: Option<f64>,
 }
@@ -31,13 +35,15 @@ struct LatticesLoss<'a> {
 impl<'a> LatticesLoss<'a> {
     fn new(
         lattices: &'a [Lattice],
-        unigram_fids: Vec<HashMap<usize, usize>>,
-        bigram_fids: Vec<HashMap<usize, usize>>,
+        provider: &'a FeatureProvider,
+        unigram_fids: Vec<u32>,
+        bigram_fids: Vec<HashMap<u32, u32>>,
         n_threads: usize,
         l2_lambda: Option<f64>,
     ) -> Self {
         Self {
             lattices,
+            provider,
             unigram_fids,
             bigram_fids,
             n_threads,
@@ -55,17 +61,17 @@ impl<'a> CostFunction for LatticesLoss<'a> {
         for lattice in self.lattices {
             s.send(lattice).unwrap();
         }
-        let (mut loss_total, p) = thread::scope(|scope| {
+        let mut loss_total = thread::scope(|scope| {
             let mut threads = vec![];
             for _ in 0..self.n_threads {
                 let t = scope.spawn(|| {
                     let mut alphas = vec![];
                     let mut betas = vec![];
                     let mut loss_total = 0.0;
-                    let mut p = 0.0;
                     while let Ok(lattice) = r.try_recv() {
                         let z = forward_backward::calculate_alphas_betas(
                             lattice,
+                            self.provider,
                             param,
                             &self.unigram_fids,
                             &self.bigram_fids,
@@ -74,30 +80,25 @@ impl<'a> CostFunction for LatticesLoss<'a> {
                         );
                         let loss = forward_backward::calculate_loss(
                             lattice,
+                            self.provider,
                             param,
                             &self.unigram_fids,
                             &self.bigram_fids,
                             z,
                         );
-                        p += (-loss).exp();
                         loss_total += loss;
                     }
-                    (loss_total, p)
+                    loss_total
                 });
                 threads.push(t);
             }
             let mut loss_total = 0.0;
-            let mut p_total = 0.0;
             for t in threads {
-                let (loss, p) = t.join().unwrap();
+                let loss = t.join().unwrap();
                 loss_total += loss;
-                p_total += p;
             }
-            (loss_total, p_total / self.lattices.len() as f64)
+            loss_total
         });
-
-        eprintln!("loss = {loss_total}");
-        eprintln!("mean likelihood = {p}");
 
         if let Some(lambda) = self.l2_lambda {
             let mut norm2 = 0.0;
@@ -130,6 +131,7 @@ impl<'a> Gradient for LatticesLoss<'a> {
                     while let Ok(lattice) = r.try_recv() {
                         let z = forward_backward::calculate_alphas_betas(
                             lattice,
+                            self.provider,
                             param,
                             &self.unigram_fids,
                             &self.bigram_fids,
@@ -138,6 +140,7 @@ impl<'a> Gradient for LatticesLoss<'a> {
                         );
                         forward_backward::update_gradient(
                             lattice,
+                            self.provider,
                             param,
                             &self.unigram_fids,
                             &self.bigram_fids,
@@ -176,7 +179,7 @@ pub enum Regularization {
     L2,
 }
 
-/// Trainer for CRF
+/// CRF trainer.
 #[cfg_attr(docsrs, doc(cfg(feature = "train")))]
 pub struct Trainer {
     max_iter: u64,
@@ -186,20 +189,20 @@ pub struct Trainer {
 }
 
 impl Trainer {
-    /// Creates a new trainer
-    pub fn new() -> Self {
+    /// Creates a new trainer.
+    pub const fn new() -> Self {
         Self {
             max_iter: 100,
             n_threads: 1,
-            regularization: Regularization::L2,
+            regularization: Regularization::L1,
             lambda: 0.1,
         }
     }
 
-    /// Sets the maximum number of iterations
-    pub fn max_iter(mut self, max_iter: u64) -> Result<Self> {
+    /// Sets the maximum number of iterations.
+    pub const fn max_iter(mut self, max_iter: u64) -> Result<Self> {
         if max_iter == 0 {
-            return Err("max_iter must not be 0");
+            return Err(RucrfError::invalid_argument("max_iter must be >= 1"));
         }
         self.max_iter = max_iter;
         Ok(self)
@@ -208,17 +211,17 @@ impl Trainer {
     /// Sets regularization settings.
     pub fn regularization(mut self, regularization: Regularization, lambda: f64) -> Result<Self> {
         if lambda < 0.0 {
-            return Err("lambda must be greater than or equal to 0.0");
+            return Err(RucrfError::invalid_argument("lambda must be >= 0"));
         }
         self.regularization = regularization;
         self.lambda = lambda;
         Ok(self)
     }
 
-    /// Sets the number of threads
-    pub fn n_threads(mut self, n_threads: usize) -> Result<Self> {
+    /// Sets the number of threads.
+    pub const fn n_threads(mut self, n_threads: usize) -> Result<Self> {
         if n_threads == 0 {
-            return Err("n_threads must not be 0");
+            return Err(RucrfError::invalid_argument("n_thread must be >= 1"));
         }
         self.n_threads = n_threads;
         Ok(self)
@@ -226,78 +229,135 @@ impl Trainer {
 
     #[inline(always)]
     fn update_unigram_feature(
-        label: usize,
-        feature_id: usize,
-        unigram_fids: &mut Vec<HashMap<usize, usize>>,
+        provider: &FeatureProvider,
+        label: NonZeroU32,
+        unigram_fids: &mut Vec<u32>,
         weights: &mut Vec<f64>,
     ) {
-        if unigram_fids.len() <= label {
-            unigram_fids.resize(label + 1, HashMap::new());
-        }
-        let features = &mut unigram_fids[label];
-        if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&feature_id) {
-            v.insert(feature_id, weights.len());
-            weights.push(0.0);
+        for &fid in provider.get_feature_set(label).unigram() {
+            let fid = usize::from_u32(fid.get());
+            if unigram_fids.len() <= fid {
+                unigram_fids.resize(fid + 1, 0);
+            }
+            if unigram_fids.len() == fid + 1 {
+                unigram_fids[fid] = u32::try_from(weights.len()).unwrap();
+                weights.push(0.0);
+            }
         }
     }
 
     #[inline(always)]
     fn update_bigram_feature(
-        left_label: usize,
-        right_label: usize,
-        bigram_fids: &mut Vec<HashMap<usize, usize>>,
+        provider: &FeatureProvider,
+        left_label: Option<NonZeroU32>,
+        right_label: Option<NonZeroU32>,
+        bigram_fids: &mut Vec<HashMap<u32, u32>>,
         weights: &mut Vec<f64>,
     ) {
-        if bigram_fids.len() <= left_label {
-            bigram_fids.resize(left_label + 1, HashMap::new());
-        }
-        let features = &mut bigram_fids[left_label];
-        if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&right_label) {
-            v.insert(right_label, weights.len());
-            weights.push(0.0);
+        match (left_label, right_label) {
+            (Some(left_label), Some(right_label)) => {
+                for (left_fid, right_fid) in provider
+                    .get_feature_set(left_label)
+                    .left()
+                    .iter()
+                    .zip(provider.get_feature_set(right_label).right())
+                {
+                    if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
+                        let left_fid = usize::try_from(left_fid.get()).unwrap();
+                        let right_fid = right_fid.get();
+                        if bigram_fids.len() <= left_fid {
+                            bigram_fids.resize(left_fid + 1, HashMap::new());
+                        }
+                        let features = &mut bigram_fids[left_fid];
+                        if let RawEntryMut::Vacant(v) =
+                            features.raw_entry_mut().from_key(&right_fid)
+                        {
+                            v.insert(right_fid, u32::try_from(weights.len()).unwrap());
+                            weights.push(0.0);
+                        }
+                    }
+                }
+            }
+            (Some(left_label), None) => {
+                for left_fid in provider.get_feature_set(left_label).left().iter().flatten() {
+                    let left_fid = usize::try_from(left_fid.get()).unwrap();
+                    if bigram_fids.len() <= left_fid {
+                        bigram_fids.resize(left_fid + 1, HashMap::new());
+                    }
+                    let features = &mut bigram_fids[left_fid];
+                    if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&0) {
+                        v.insert(0, u32::try_from(weights.len()).unwrap());
+                        weights.push(0.0);
+                    }
+                }
+            }
+            (None, Some(right_label)) => {
+                for right_fid in provider
+                    .get_feature_set(right_label)
+                    .right()
+                    .iter()
+                    .flatten()
+                {
+                    let right_fid = right_fid.get();
+                    if bigram_fids.is_empty() {
+                        bigram_fids.resize(1, HashMap::new());
+                    }
+                    let features = &mut bigram_fids[0];
+                    if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&right_fid) {
+                        v.insert(right_fid, u32::try_from(weights.len()).unwrap());
+                        weights.push(0.0);
+                    }
+                }
+            }
+            _ => unreachable!(),
         }
     }
 
     fn update_features(
         lattice: &Lattice,
-        unigram_fids: &mut Vec<HashMap<usize, usize>>,
-        bigram_fids: &mut Vec<HashMap<usize, usize>>,
+        provider: &FeatureProvider,
+        unigram_fids: &mut Vec<u32>,
+        bigram_fids: &mut Vec<HashMap<u32, u32>>,
         weights: &mut Vec<f64>,
     ) {
         for (i, node) in lattice.nodes().iter().enumerate() {
             if i == 0 {
                 for curr_edge in node.edges() {
-                    Self::update_bigram_feature(0, curr_edge.label, bigram_fids, weights);
+                    Self::update_bigram_feature(
+                        provider,
+                        None,
+                        Some(curr_edge.label),
+                        bigram_fids,
+                        weights,
+                    );
                 }
             }
             for curr_edge in node.edges() {
                 for next_edge in lattice.nodes()[curr_edge.target()].edges() {
                     Self::update_bigram_feature(
-                        curr_edge.label,
-                        next_edge.label,
+                        provider,
+                        Some(curr_edge.label),
+                        Some(next_edge.label),
                         bigram_fids,
                         weights,
                     );
                 }
                 if curr_edge.target() == lattice.nodes().len() - 1 {
-                    Self::update_bigram_feature(curr_edge.label, 0, bigram_fids, weights);
+                    Self::update_bigram_feature(
+                        provider,
+                        Some(curr_edge.label),
+                        None,
+                        bigram_fids,
+                        weights,
+                    );
                 }
-                if let Some(feature_ids) = lattice.features().get(&(i, curr_edge.target())) {
-                    for feature_id in feature_ids {
-                        Self::update_unigram_feature(
-                            curr_edge.label,
-                            feature_id.feature_id,
-                            unigram_fids,
-                            weights,
-                        );
-                    }
-                }
+                Self::update_unigram_feature(provider, curr_edge.label, unigram_fids, weights);
             }
         }
     }
 
-    /// Starts training and generates a model from the given lattices
-    pub fn train(&self, lattices: &[Lattice]) -> Model {
+    /// Trains a model from the given dataset.
+    pub fn train(&self, lattices: &[Lattice], mut provider: FeatureProvider) -> RawModel {
         let mut unigram_fids = vec![];
         let mut bigram_fids = vec![];
         let mut weights_init = vec![];
@@ -305,6 +365,7 @@ impl Trainer {
         for lattice in lattices {
             Self::update_features(
                 lattice,
+                &provider,
                 &mut unigram_fids,
                 &mut bigram_fids,
                 &mut weights_init,
@@ -313,13 +374,20 @@ impl Trainer {
 
         let weights;
         let loss_function_used;
+
         match self.regularization {
             Regularization::L1 => {
                 let linesearch = BacktrackingLineSearch::new(ArmijoCondition::new(1e-4).unwrap())
                     .rho(0.5)
                     .unwrap();
-                let loss_function =
-                    LatticesLoss::new(lattices, unigram_fids, bigram_fids, self.n_threads, None);
+                let loss_function = LatticesLoss::new(
+                    lattices,
+                    &provider,
+                    unigram_fids,
+                    bigram_fids,
+                    self.n_threads,
+                    None,
+                );
                 let solver = LBFGS::new(linesearch, 7)
                     .with_l1_regularization(self.lambda)
                     .unwrap();
@@ -335,6 +403,7 @@ impl Trainer {
                 let linesearch = MoreThuenteLineSearch::new().with_c(1e-4, 0.9).unwrap();
                 let loss_function = LatticesLoss::new(
                     lattices,
+                    &provider,
                     unigram_fids,
                     bigram_fids,
                     self.n_threads,
@@ -351,48 +420,209 @@ impl Trainer {
             }
         }
 
-        let mut unigram_fids = vec![];
-        let mut bigram_fids = vec![];
-        let mut new_weights = vec![];
-        for hm in loss_function_used.unigram_fids {
-            let mut new_hm = HashMap::new();
-            for (k, v) in hm {
-                let w = weights[v];
-                if w.abs() > f64::EPSILON {
-                    new_hm.insert(k, new_weights.len());
-                    new_weights.push(w);
+        let unigram_fids = loss_function_used.unigram_fids;
+        let bigram_fids = loss_function_used.bigram_fids;
+
+        // Removes zero features
+        let mut feature_id_map = HashMap::new();
+        let mut new_weights = vec![0.0];
+        for (i, w) in weights.into_iter().enumerate() {
+            if w.abs() < f64::EPSILON {
+                continue;
+            }
+            feature_id_map.insert(
+                u32::try_from(i).unwrap(),
+                u32::try_from(new_weights.len()).unwrap(),
+            );
+            new_weights.push(w);
+        }
+        let mut new_unigram_fids = vec![];
+        for fid in unigram_fids {
+            new_unigram_fids.push(feature_id_map.get(&fid).and_then(|&i| NonZeroU32::new(i)));
+        }
+        let mut new_bigram_fids = vec![];
+        let mut right_id_used = HashSet::new();
+        for fids in bigram_fids {
+            let mut new_fids = HashMap::new();
+            for (k, v) in fids {
+                if let Some(&v) = feature_id_map.get(&v) {
+                    new_fids.insert(k, v);
+                    right_id_used.insert(k);
                 }
             }
-            unigram_fids.push(new_hm);
+            new_bigram_fids.push(new_fids);
         }
-        for hm in loss_function_used.bigram_fids {
-            let mut new_hm = HashMap::new();
-            for (k, v) in hm {
-                let w = weights[v];
-                if w.abs() > f64::EPSILON {
-                    new_hm.insert(k, new_weights.len());
-                    new_weights.push(w);
+
+        for feature_set in &mut provider.feature_sets {
+            let mut new_unigram = vec![];
+            for &fid in feature_set.unigram() {
+                if new_unigram_fids
+                    .get(usize::from_u32(fid.get() - 1))
+                    .copied()
+                    .flatten()
+                    .is_some()
+                {
+                    new_unigram.push(fid);
                 }
             }
-            bigram_fids.push(new_hm);
+            feature_set.unigram = new_unigram;
+            for fid in &mut feature_set.left {
+                *fid = fid.filter(|fid| {
+                    !new_bigram_fids
+                        .get(usize::from_u32(fid.get()))
+                        .map_or(false, |hm| hm.is_empty())
+                });
+            }
+            for fid in &mut feature_set.right {
+                *fid = fid.filter(|fid| right_id_used.contains(&fid.get()));
+            }
         }
 
-        dbg!(new_weights.len());
-        dbg!(weights.len());
-
-        bigram_fids[0].insert(0, new_weights.len());
-        new_weights.push(f64::NEG_INFINITY);
-
-        Model {
-            weights: new_weights,
-            unigram_fids,
-            bigram_fids,
-        }
+        RawModel::new(new_weights, new_unigram_fids, new_bigram_fids, provider)
     }
 }
 
 impl Default for Trainer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::test_utils::{self, hashmap, logsumexp};
+
+    // 0     1     2     3     4     5
+    //  /-1-\ /-2-\ /----3----\ /-4-\
+    // *     *     *     *     *     *
+    //  \----5----/ \-6-/ \-7-/
+    // weights:
+    // 0->1: 4 (0-1:1 0-2:3)
+    // 0->5: 6 (0-2:3 0-2:3)
+    // 1->2: 30 (1-4:13 2-3:17)
+    // 2->3: 48 (3-2:21 4-3:27)
+    // 2->6: 18 (3-4:13 4-1:5)
+    // 5->3: 88 (2-2:46 3-3:42)
+    // 5->6: 38 (2-4:18 3-1:20)
+    // 6->7: 45 (2-3:17 4-4:6)
+    // 3->4: 31 (1-2:11 3-1:20)
+    // 7->4: 36 (4-2:26 1-1:10)
+    // 4->0: 33 (1-0:9 4-0:24)
+    // 1: 6
+    // 2: 14
+    // 3: 8
+    // 4: 10
+    // 5: 10
+    // 6: 10
+    // 7: 10
+    //
+    // 1-2-3-4: 184 *
+    // 1-2-6-7-4: 194
+    // 5-3-4: 186
+    // 5-6-7-4: 176
+    //
+    // loss = logsumexp(184,194,186,176) - 184
+    #[test]
+    fn test_loss() {
+        let weights = vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 46.0,
+            17.0, 18.0, 19.0, 20.0, 21.0, 42.0, 13.0, 24.0, 5.0, 26.0, 27.0, 6.0,
+        ];
+        let provider = test_utils::generate_test_feature_provider();
+        let lattices = vec![test_utils::generate_test_lattice()];
+        let loss_function = LatticesLoss::new(
+            &lattices,
+            &provider,
+            vec![1, 3, 5, 7],
+            vec![
+                hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
+                hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
+                hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
+                hashmap![0 => 18, 1 => 19, 2 => 20, 3 => 21, 4 => 22],
+                hashmap![0 => 23, 1 => 24, 2 => 25, 3 => 26, 4 => 27],
+            ],
+            1,
+            None,
+        );
+
+        let expected = logsumexp!(184.0, 194.0, 186.0, 176.0) - 184.0;
+        let result = loss_function.cost(&weights).unwrap();
+
+        assert!((expected - result).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_gradient() {
+        let weights = vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 46.0,
+            17.0, 18.0, 19.0, 20.0, 21.0, 42.0, 13.0, 24.0, 5.0, 26.0, 27.0, 6.0,
+        ];
+        let provider = test_utils::generate_test_feature_provider();
+        let lattices = vec![test_utils::generate_test_lattice()];
+        let loss_function = LatticesLoss::new(
+            &lattices,
+            &provider,
+            vec![1, 3, 5, 7],
+            vec![
+                hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
+                hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
+                hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
+                hashmap![0 => 18, 1 => 19, 2 => 20, 3 => 21, 4 => 22],
+                hashmap![0 => 23, 1 => 24, 2 => 25, 3 => 26, 4 => 27],
+            ],
+            1,
+            None,
+        );
+
+        let z = logsumexp!(184.0, 194.0, 186.0, 176.0);
+        let prob1 = (184.0 - z).exp();
+        let prob2 = (194.0 - z).exp();
+        let prob3 = (186.0 - z).exp();
+        let prob4 = (176.0 - z).exp();
+
+        let mut expected = vec![0.0; 29];
+        // unigram gradients
+        for i in [1, 3, 5, 7, 1, 5, 7, 1] {
+            expected[i] -= 1.0;
+        }
+        for i in [1, 3, 5, 7, 1, 5, 7, 1] {
+            expected[i] += prob1;
+        }
+        for i in [1, 3, 5, 7, 1, 7, 3, 5, 7, 1] {
+            expected[i] += prob2;
+        }
+        for i in [3, 5, 1, 5, 7, 1] {
+            expected[i] += prob3;
+        }
+        for i in [3, 5, 1, 7, 3, 5, 7, 1] {
+            expected[i] += prob4;
+        }
+        // bigram gradients
+        for i in [0, 2, 12, 16, 20, 26, 10, 19, 8, 23] {
+            expected[i] -= 1.0;
+        }
+        for i in [0, 2, 12, 16, 20, 26, 10, 19, 8, 23] {
+            expected[i] += prob1;
+        }
+        for i in [0, 2, 12, 16, 22, 24, 16, 27, 25, 9, 8, 23] {
+            expected[i] += prob2;
+        }
+        for i in [2, 2, 15, 21, 10, 19, 8, 23] {
+            expected[i] += prob3;
+        }
+        for i in [2, 2, 17, 19, 16, 27, 25, 9, 8, 23] {
+            expected[i] += prob4;
+        }
+
+        let result = loss_function.gradient(&weights).unwrap();
+
+        let norm = expected
+            .iter()
+            .zip(&result)
+            .fold(0.0, |acc, (a, b)| acc + (a - b).abs());
+
+        assert!(norm < 1e-12);
     }
 }

@@ -12,15 +12,16 @@ keywords = ["crf"]
 categories = ["science", "algorithms", "no-std"]
 
 [dependencies]
-bincode = "2.0.0-rc.1"  # MIT
-hashbrown = "0.12"  # MIT or Apache-2.0
+bincode = "2.0.0-rc.1" # MIT
+hashbrown = "0.12" # MIT or Apache-2.0
 
-argmin = { git = "https://github.com/argmin-rs/argmin", optional = true }  # MIT or Apache-2.0
-argmin-math = { git = "https://github.com/argmin-rs/argmin", optional = true }  # MIT or Apache-2.0
-crossbeam-channel = { version = "0.5.6", optional = true }  # MIT or Apache-2.0
+argmin = { version = "0.7.0", optional = true } # MIT or Apache-2.0
+argmin-math = { version = "0.2.0", optional = true } # MIT or Apache-2.0
+crossbeam-channel = { version = "0.5.6", optional = true } # MIT or Apache-2.0
+rand = "0.8"
 
 [features]
-default = ["alloc"]
+default = ["alloc", "train"]
 alloc = []
 std = ["alloc"]
 train = ["std", "argmin", "argmin-math", "crossbeam-channel"]
@@ -30,7 +31,3 @@ clap = { version = "3.2", features = ["derive"] }
 daachorse = "1.0.0"
 vaporetto = "0.5.1"
 zstd = "0.11.2"
-
-[[example]]
-name = "morphological_analysis"
-required-features = ["train"]

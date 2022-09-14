@@ -1,159 +1,87 @@
-use core::num::NonZeroUsize;
+use core::num::NonZeroU32;
 
 use alloc::vec::Vec;
 
-use hashbrown::HashMap;
+use crate::errors::{Result, RucrfError};
 
-/// Represents an edge in a lattice
+/// Represents an edge.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Edge {
     target: usize,
-    pub(crate) label: usize,
+    pub(crate) label: NonZeroU32,
 }
 
 impl Edge {
-    /// Creates a new edge
-    ///
-    /// # Arguments
-    ///
-    /// * `target` - Index of the node to which the edge points.
-    /// * `label` - Label this edge holds.
+    /// Creates a new edge.
     #[inline(always)]
-    #[must_use]
-    pub fn new(target: usize, label: Option<NonZeroUsize>) -> Self {
-        Self {
-            target,
-            label: label.map_or(0, NonZeroUsize::get),
-        }
+    pub const fn new(target: usize, label: NonZeroU32) -> Self {
+        Self { target, label }
     }
 
-    /// Gets the target value
+    /// Returns an index of the target node.
     #[inline(always)]
-    #[must_use]
     pub const fn target(&self) -> usize {
         self.target
     }
 
-    /// Gets the label value
+    /// Returns a label of this edge.
     #[inline(always)]
-    #[must_use]
-    pub const fn label(&self) -> Option<NonZeroUsize> {
-        NonZeroUsize::new(self.label)
+    pub const fn label(&self) -> NonZeroU32 {
+        self.label
     }
 }
 
+/// Represents a node.
 #[derive(Clone, Default, Debug)]
 pub struct Node {
     edges: Vec<Edge>,
 }
 
 impl Node {
+    /// Returns a list of edges.
+    ///
+    /// In training, the first edge is treated as the positive example.
     #[inline(always)]
     pub fn edges(&self) -> &[Edge] {
         &self.edges
     }
 }
 
-/// Represents a feature
-#[derive(Debug)]
-pub struct Feature {
-    /// Feature ID
-    pub feature_id: usize,
-
-    /// Feature value
-    pub value: f64,
-}
-
-impl Feature {
-    /// Creates a new feature with its ID and value
-    #[inline(always)]
-    #[must_use]
-    pub const fn new(feature_id: usize, value: f64) -> Self {
-        Self { feature_id, value }
-    }
-}
-
-/// Represents a lattice
-#[derive(Debug)]
+/// Represents a lattice.
 pub struct Lattice {
     nodes: Vec<Node>,
-    features: HashMap<(usize, usize), Vec<Feature>>,
 }
 
 impl Lattice {
-    /// Creates a new lattice
-    ///
-    /// During training, the path specified here is treated as a positive example.
+    /// Creates a new lattice.
     ///
     /// # Arguments
     ///
-    /// * `edges` - List of edges representing a single path.
-    ///
-    /// # Panics
-    ///
-    /// Target of each edge must point backward.
-    #[must_use]
-    pub fn new(edges: &[Edge]) -> Self {
-        assert!(!edges.is_empty());
-        let nodes_len = edges.last().unwrap().target() + 1;
-        let mut nodes = vec![Node::default(); nodes_len];
-        let mut pos = 0;
-        for &edge in edges {
-            nodes[pos].edges.push(edge);
-            assert!(edge.target() > pos);
-            pos = edge.target();
+    /// * `length` - The length of this lattice.
+    #[inline(always)]
+    pub fn new(length: usize) -> Result<Self> {
+        if length == 0 {
+            return Err(RucrfError::invalid_argument("length must be >= 1"));
         }
-        Self {
-            nodes,
-            features: HashMap::new(),
+        let nodes = vec![Node::default(); length + 1];
+        Ok(Self { nodes })
+    }
+
+    /// Adds a new edge.
+    ///
+    /// In training, the first edge of each position is treated as the positive example.
+    #[inline(always)]
+    pub fn add_edge(&mut self, pos: usize, edge: Edge) -> Result<()> {
+        if edge.target() <= pos {
+            return Err(RucrfError::invalid_argument("edge.target() must be >= pos"));
         }
+        self.nodes[pos].edges.push(edge);
+        Ok(())
     }
 
-    /// Adds a new branch
-    ///
-    /// During training, the path specified here is treated as a negative example.
-    ///
-    /// # Arguments
-    ///
-    /// * `start` - Index of the starting point of the edge.
-    /// * `edge` - Edge to add.
-    ///
-    /// # Panics
-    ///
-    /// Target of the each must point backward.
+    /// Returns a list of nodes.
     #[inline(always)]
-    pub fn add_branch(&mut self, start: usize, edge: Edge) {
-        assert!(start < edge.target());
-        self.nodes[start].edges.push(edge);
-    }
-
-    /// Adds a feature for the set of edges connecting the specified start and end points.
-    ///
-    /// # Arguments
-    ///
-    /// * `start` - Start point.
-    /// * `end` - End point.
-    /// * `feature` - Feature to add.
-    ///
-    /// # Panics
-    ///
-    /// `end` must be greater than `start`.
-    #[inline(always)]
-    pub fn add_feature(&mut self, start: usize, end: usize, feature: Feature) {
-        assert!(start < end);
-        self.features
-            .entry((start, end))
-            .or_insert_with(Vec::new)
-            .push(feature);
-    }
-
-    #[inline(always)]
-    pub(crate) fn nodes(&self) -> &[Node] {
+    pub fn nodes(&self) -> &[Node] {
         &self.nodes
-    }
-
-    #[inline(always)]
-    pub(crate) const fn features(&self) -> &HashMap<(usize, usize), Vec<Feature>> {
-        &self.features
     }
 }
