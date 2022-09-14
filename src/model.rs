@@ -452,7 +452,7 @@ mod tests {
             ],
             provider: test_utils::generate_test_feature_provider(),
         };
-        let compiled_model = model.compile();
+        let compiled_model = model.merge();
 
         let lattice = test_utils::generate_test_lattice();
 
