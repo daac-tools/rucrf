@@ -79,11 +79,11 @@ impl RawModel {
         }
     }
 
-    /// Compiles this model into [`CompiledModel`].
+    /// Merges this model and returns [`MergedModel`].
     ///
     /// This process integrates the features, so that each edge has three items: a uni-gram cost,
     /// a left-connection ID, and a right-connection ID.
-    pub fn compile(&self) -> CompiledModel {
+    pub fn merge(&self) -> MergedModel {
         let mut left_ids = HashMap::new();
         let mut right_ids = HashMap::new();
         let mut left_ids_rev = vec![];
@@ -124,7 +124,7 @@ impl RawModel {
                 }
                 id
             };
-            new_feature_sets.push(CompiledFeatureSet {
+            new_feature_sets.push(MergedFeatureSet {
                 weight,
                 left_id,
                 right_id,
@@ -181,7 +181,7 @@ impl RawModel {
             matrix.push(m);
         }
 
-        CompiledModel {
+        MergedModel {
             feature_sets: new_feature_sets,
             matrix,
             left_ids: left_ids_rev,
@@ -255,26 +255,30 @@ impl Model for RawModel {
     }
 }
 
+/// Represents a compiled feature set.
 #[derive(Clone, Copy, Debug)]
-pub struct CompiledFeatureSet {
+pub struct MergedFeatureSet {
+    /// Weight.
     pub weight: f64,
+    /// Left bi-gram feature ID.
     pub left_id: NonZeroU32,
+    /// Right bi-gram feature ID.
     pub right_id: NonZeroU32,
 }
 
 /// Represents a compiled model.
-pub struct CompiledModel {
-    /// Searches the best path of the given lattice.
-    pub feature_sets: Vec<CompiledFeatureSet>,
-    /// Searches the best path of the given lattice.
+pub struct MergedModel {
+    /// Feature sets corresponding to label IDs.
+    pub feature_sets: Vec<MergedFeatureSet>,
+    /// Bi-gram weight matrix.
     pub matrix: Vec<HashMap<u32, f64>>,
-    /// Searches the best path of the given lattice.
+    /// Reverse mapping of merged left feature IDs and original left IDs.
     pub left_ids: Vec<Vec<Option<NonZeroU32>>>,
-    /// Searches the best path of the given lattice.
+    /// Reverse mapping of merged right feature IDs and original right IDs.
     pub right_ids: Vec<Vec<Option<NonZeroU32>>>,
 }
 
-impl Model for CompiledModel {
+impl Model for MergedModel {
     #[must_use]
     fn search_best_path(&self, lattice: &Lattice) -> (Vec<Edge>, f64) {
         let mut best_scores = vec![vec![]; lattice.nodes().len()];

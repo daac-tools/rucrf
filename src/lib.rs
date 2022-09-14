@@ -161,7 +161,7 @@ mod test_utils;
 
 pub use feature::{FeatureProvider, FeatureSet};
 pub use lattice::{Edge, Lattice};
-pub use model::{CompiledModel, Model, RawModel};
+pub use model::{MergedModel, MergedFeatureSet, Model, RawModel};
 
 #[cfg(feature = "train")]
 pub use trainer::{Regularization, Trainer};
