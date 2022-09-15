@@ -38,18 +38,21 @@ impl Error for ModelScaleError {}
 /// The error type for Rucrf.
 #[derive(Debug)]
 pub enum RucrfError {
+    /// Error variant for [`InvalidArgumentError`].
     InvalidArgument(InvalidArgumentError),
+
+    /// Error variant for [`ModelScaleError`].
     ModelScale(ModelScaleError),
 }
 
 impl RucrfError {
     /// Creates a new [`InvalidArgumentError`].
-    pub const fn invalid_argument(msg: &'static str) -> Self {
+    pub(crate) const fn invalid_argument(msg: &'static str) -> Self {
         Self::InvalidArgument(InvalidArgumentError { msg })
     }
 
     /// Creates a new [`ModelScaleError`].
-    pub const fn model_scale(msg: &'static str) -> Self {
+    pub(crate) const fn model_scale(msg: &'static str) -> Self {
         Self::ModelScale(ModelScaleError { msg })
     }
 }

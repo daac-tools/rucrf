@@ -143,7 +143,7 @@ compile_error!("`alloc` feature is currently required to build this crate");
 #[macro_use]
 extern crate alloc;
 
-mod errors;
+pub mod errors;
 mod feature;
 mod lattice;
 mod model;
