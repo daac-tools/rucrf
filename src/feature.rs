@@ -19,12 +19,9 @@ pub fn apply_bigram<F>(
 {
     match (left_label, right_label) {
         (Some(left_label), Some(right_label)) => {
-            for (&left_fid, &right_fid) in provider
-                .get_feature_set(left_label)
-                .left()
-                .iter()
-                .zip(provider.get_feature_set(right_label).right())
-            {
+            let left_features = provider.get_feature_set(left_label).bigram_left();
+            let right_features = provider.get_feature_set(right_label).bigram_right();
+            for (&left_fid, &right_fid) in left_features.iter().zip(right_features) {
                 if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
                     let left_fid = usize::from_u32(left_fid.get());
                     let right_fid = right_fid.get();
@@ -36,7 +33,7 @@ pub fn apply_bigram<F>(
             }
         }
         (Some(left_label), None) => {
-            for &left_fid in provider.get_feature_set(left_label).left() {
+            for &left_fid in provider.get_feature_set(left_label).bigram_left() {
                 if let Some(left_fid) = left_fid {
                     let left_fid = usize::from_u32(left_fid.get());
                     if let Some(&fid) = bigram_fids[left_fid].get(&0) {
@@ -46,7 +43,7 @@ pub fn apply_bigram<F>(
             }
         }
         (None, Some(right_label)) => {
-            for &right_fid in provider.get_feature_set(right_label).right() {
+            for &right_fid in provider.get_feature_set(right_label).bigram_right() {
                 if let Some(right_fid) = right_fid {
                     let right_fid = right_fid.get();
                     if let Some(&fid) = bigram_fids[0].get(&right_fid) {
@@ -63,8 +60,8 @@ pub fn apply_bigram<F>(
 #[derive(Debug, Default, Decode, Encode)]
 pub struct FeatureSet {
     pub(crate) unigram: Vec<NonZeroU32>,
-    pub(crate) left: Vec<Option<NonZeroU32>>,
-    pub(crate) right: Vec<Option<NonZeroU32>>,
+    pub(crate) bigram_right: Vec<Option<NonZeroU32>>,
+    pub(crate) bigram_left: Vec<Option<NonZeroU32>>,
 }
 
 impl FeatureSet {
@@ -73,13 +70,13 @@ impl FeatureSet {
     #[must_use]
     pub fn new(
         unigram: &[NonZeroU32],
-        left: &[Option<NonZeroU32>],
-        right: &[Option<NonZeroU32>],
+        bigram_right: &[Option<NonZeroU32>],
+        bigram_left: &[Option<NonZeroU32>],
     ) -> Self {
         Self {
             unigram: unigram.to_vec(),
-            left: left.to_vec(),
-            right: right.to_vec(),
+            bigram_right: bigram_right.to_vec(),
+            bigram_left: bigram_left.to_vec(),
         }
     }
 
@@ -90,18 +87,18 @@ impl FeatureSet {
         &self.unigram
     }
 
-    /// Gets left bi-gram feature IDs
-    #[inline(always)]
-    #[must_use]
-    pub fn left(&self) -> &[Option<NonZeroU32>] {
-        &self.left
-    }
-
     /// Gets right bi-gram feature IDs.
     #[inline(always)]
     #[must_use]
-    pub fn right(&self) -> &[Option<NonZeroU32>] {
-        &self.right
+    pub fn bigram_right(&self) -> &[Option<NonZeroU32>] {
+        &self.bigram_right
+    }
+
+    /// Gets left bi-gram feature IDs
+    #[inline(always)]
+    #[must_use]
+    pub fn bigram_left(&self) -> &[Option<NonZeroU32>] {
+        &self.bigram_left
     }
 }
 

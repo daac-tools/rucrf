@@ -89,10 +89,10 @@ impl RawModel {
     /// Generated left/right bi-gram ID must be smaller than 2^32.
     #[must_use]
     pub fn merge(&self) -> MergedModel {
-        let mut left_ids = HashMap::new();
-        let mut right_ids = HashMap::new();
-        let mut left_ids_rev = vec![];
-        let mut right_ids_rev = vec![];
+        let mut left_conn_ids = HashMap::new();
+        let mut right_conn_ids = HashMap::new();
+        let mut left_conn_ids_rev = vec![];
+        let mut right_conn_ids_rev = vec![];
         let mut new_feature_sets = vec![];
         for feature_set in &self.provider.feature_sets {
             let mut weight = 0.0;
@@ -104,30 +104,32 @@ impl RawModel {
                 }
             }
             let left_id = {
-                let left = feature_set.left();
-                let new_id = NonZeroU32::new(u32::try_from(left_ids.len() + 1).unwrap()).unwrap();
-                let id = *left_ids
+                *left_conn_ids
                     .raw_entry_mut()
-                    .from_key(left)
-                    .or_insert_with(|| (left.to_vec(), new_id))
-                    .1;
-                if id == new_id {
-                    left_ids_rev.push(left.to_vec());
-                }
-                id
+                    .from_key(feature_set.bigram_right())
+                    .or_insert_with(|| {
+                        let features = feature_set.bigram_right().to_vec();
+                        left_conn_ids_rev.push(features.clone());
+                        let new_id =
+                            NonZeroU32::new(u32::try_from(left_conn_ids_rev.len()).unwrap())
+                                .unwrap();
+                        (features, new_id)
+                    })
+                    .1
             };
             let right_id = {
-                let right = feature_set.right();
-                let new_id = NonZeroU32::new(u32::try_from(right_ids.len() + 1).unwrap()).unwrap();
-                let id = *right_ids
+                *right_conn_ids
                     .raw_entry_mut()
-                    .from_key(right)
-                    .or_insert_with(|| (right.to_vec(), new_id))
-                    .1;
-                if id == new_id {
-                    right_ids_rev.push(right.to_vec());
-                }
-                id
+                    .from_key(feature_set.bigram_left())
+                    .or_insert_with(|| {
+                        let features = feature_set.bigram_left().to_vec();
+                        right_conn_ids_rev.push(features.clone());
+                        let new_id =
+                            NonZeroU32::new(u32::try_from(right_conn_ids_rev.len()).unwrap())
+                                .unwrap();
+                        (features, new_id)
+                    })
+                    .1
             };
             new_feature_sets.push(MergedFeatureSet {
                 weight,
@@ -139,9 +141,9 @@ impl RawModel {
 
         // BOS
         let mut m = HashMap::new();
-        for (i, right_ids) in right_ids_rev.iter().enumerate() {
+        for (i, left_ids) in left_conn_ids_rev.iter().enumerate() {
             let mut weight = 0.0;
-            for fid in right_ids.iter().flatten() {
+            for fid in left_ids.iter().flatten() {
                 if let Some(&fid) = self.bigram_fids[0].get(&fid.get()) {
                     weight += self.weights[usize::from_u32(fid)];
                 }
@@ -152,14 +154,14 @@ impl RawModel {
         }
         matrix.push(m);
 
-        for left_ids in &left_ids_rev {
+        for right_ids in &right_conn_ids_rev {
             let mut m = HashMap::new();
 
             // EOS
             let mut weight = 0.0;
-            for fid in left_ids.iter().flatten() {
-                let left_id = usize::from_u32(fid.get());
-                if let Some(&fid) = self.bigram_fids[left_id].get(&0) {
+            for fid in right_ids.iter().flatten() {
+                let right_id = usize::from_u32(fid.get());
+                if let Some(&fid) = self.bigram_fids[right_id].get(&0) {
                     weight += self.weights[usize::from_u32(fid)];
                 }
             }
@@ -167,13 +169,13 @@ impl RawModel {
                 m.insert(0, weight);
             }
 
-            for (i, right_ids) in right_ids_rev.iter().enumerate() {
+            for (i, left_ids) in left_conn_ids_rev.iter().enumerate() {
                 let mut weight = 0.0;
-                for (left_id, right_id) in left_ids.iter().zip(right_ids) {
-                    if let (Some(left_id), Some(right_id)) = (left_id, right_id) {
-                        let left_id = usize::from_u32(left_id.get());
-                        let right_id = right_id.get();
-                        if let Some(&fid) = self.bigram_fids[left_id].get(&right_id) {
+                for (right_id, left_id) in right_ids.iter().zip(left_ids) {
+                    if let (Some(right_id), Some(left_id)) = (right_id, left_id) {
+                        let right_id = usize::from_u32(right_id.get());
+                        let left_id = left_id.get();
+                        if let Some(&fid) = self.bigram_fids[right_id].get(&left_id) {
                             weight += self.weights[usize::from_u32(fid)];
                         }
                     }
@@ -189,8 +191,8 @@ impl RawModel {
         MergedModel {
             feature_sets: new_feature_sets,
             matrix,
-            left_ids: left_ids_rev,
-            right_ids: right_ids_rev,
+            left_ids: left_conn_ids_rev,
+            right_ids: right_conn_ids_rev,
         }
     }
 }
@@ -260,26 +262,26 @@ impl Model for RawModel {
     }
 }
 
-/// Represents a compiled feature set.
+/// Represents a merged feature set.
 #[derive(Clone, Copy, Debug)]
 pub struct MergedFeatureSet {
     /// Weight.
     pub weight: f64,
-    /// Left bi-gram feature ID.
+    /// Left bi-gram connection ID.
     pub left_id: NonZeroU32,
-    /// Right bi-gram feature ID.
+    /// Right bi-gram connection ID.
     pub right_id: NonZeroU32,
 }
 
-/// Represents a compiled model.
+/// Represents a merged model.
 pub struct MergedModel {
     /// Feature sets corresponding to label IDs.
     pub feature_sets: Vec<MergedFeatureSet>,
     /// Bi-gram weight matrix.
     pub matrix: Vec<HashMap<u32, f64>>,
-    /// Reverse mapping of merged left feature IDs and original left IDs.
+    /// Reverse mapping of left connection IDs and right bi-gram feature IDs.
     pub left_ids: Vec<Vec<Option<NonZeroU32>>>,
-    /// Reverse mapping of merged right feature IDs and original right IDs.
+    /// Reverse mapping of right connection IDs and left bi-gram feature IDs.
     pub right_ids: Vec<Vec<Option<NonZeroU32>>>,
 }
 

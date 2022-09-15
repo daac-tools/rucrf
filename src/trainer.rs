@@ -257,12 +257,9 @@ impl Trainer {
     ) {
         match (left_label, right_label) {
             (Some(left_label), Some(right_label)) => {
-                for (left_fid, right_fid) in provider
-                    .get_feature_set(left_label)
-                    .left()
-                    .iter()
-                    .zip(provider.get_feature_set(right_label).right())
-                {
+                let left_features = provider.get_feature_set(left_label).bigram_left();
+                let right_features = provider.get_feature_set(right_label).bigram_right();
+                for (left_fid, right_fid) in left_features.iter().zip(right_features) {
                     if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
                         let left_fid = usize::try_from(left_fid.get()).unwrap();
                         let right_fid = right_fid.get();
@@ -280,7 +277,12 @@ impl Trainer {
                 }
             }
             (Some(left_label), None) => {
-                for left_fid in provider.get_feature_set(left_label).left().iter().flatten() {
+                for left_fid in provider
+                    .get_feature_set(left_label)
+                    .bigram_left()
+                    .iter()
+                    .flatten()
+                {
                     let left_fid = usize::try_from(left_fid.get()).unwrap();
                     if bigram_fids.len() <= left_fid {
                         bigram_fids.resize(left_fid + 1, HashMap::new());
@@ -295,7 +297,7 @@ impl Trainer {
             (None, Some(right_label)) => {
                 for right_fid in provider
                     .get_feature_set(right_label)
-                    .right()
+                    .bigram_right()
                     .iter()
                     .flatten()
                 {
@@ -469,14 +471,14 @@ impl Trainer {
                 }
             }
             feature_set.unigram = new_unigram;
-            for fid in &mut feature_set.left {
+            for fid in &mut feature_set.bigram_left {
                 *fid = fid.filter(|fid| {
                     !new_bigram_fids
                         .get(usize::from_u32(fid.get()))
                         .map_or(false, HashMap::is_empty)
                 });
             }
-            for fid in &mut feature_set.right {
+            for fid in &mut feature_set.bigram_right {
                 *fid = fid.filter(|fid| right_id_used.contains(&fid.get()));
             }
         }

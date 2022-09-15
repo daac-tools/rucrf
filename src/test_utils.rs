@@ -70,33 +70,33 @@ pub fn generate_test_feature_provider() -> FeatureProvider {
     ));
     feature_provider.add_feature_set(FeatureSet::new(
         &[NonZeroU32::new(3).unwrap(), NonZeroU32::new(4).unwrap()],
-        &[NonZeroU32::new(3), NonZeroU32::new(4)],
         &[NonZeroU32::new(4), NonZeroU32::new(3)],
+        &[NonZeroU32::new(3), NonZeroU32::new(4)],
     ));
     feature_provider.add_feature_set(FeatureSet::new(
         &[NonZeroU32::new(1).unwrap(), NonZeroU32::new(3).unwrap()],
-        &[NonZeroU32::new(1), NonZeroU32::new(3)],
         &[NonZeroU32::new(2), NonZeroU32::new(3)],
+        &[NonZeroU32::new(1), NonZeroU32::new(3)],
     ));
     feature_provider.add_feature_set(FeatureSet::new(
         &[NonZeroU32::new(4).unwrap(), NonZeroU32::new(1).unwrap()],
-        &[NonZeroU32::new(1), NonZeroU32::new(4)],
         &[NonZeroU32::new(2), NonZeroU32::new(1)],
+        &[NonZeroU32::new(1), NonZeroU32::new(4)],
     ));
     feature_provider.add_feature_set(FeatureSet::new(
         &[NonZeroU32::new(2).unwrap(), NonZeroU32::new(3).unwrap()],
-        &[NonZeroU32::new(2), NonZeroU32::new(3)],
         &[NonZeroU32::new(2), NonZeroU32::new(2)],
+        &[NonZeroU32::new(2), NonZeroU32::new(3)],
     ));
     feature_provider.add_feature_set(FeatureSet::new(
         &[NonZeroU32::new(1).unwrap(), NonZeroU32::new(4).unwrap()],
-        &[NonZeroU32::new(2), NonZeroU32::new(4)],
         &[NonZeroU32::new(4), NonZeroU32::new(1)],
+        &[NonZeroU32::new(2), NonZeroU32::new(4)],
     ));
     feature_provider.add_feature_set(FeatureSet::new(
         &[NonZeroU32::new(2).unwrap(), NonZeroU32::new(3).unwrap()],
-        &[NonZeroU32::new(4), NonZeroU32::new(1)],
         &[NonZeroU32::new(3), NonZeroU32::new(4)],
+        &[NonZeroU32::new(4), NonZeroU32::new(1)],
     ));
     feature_provider
 }

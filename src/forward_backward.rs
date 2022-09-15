@@ -111,7 +111,7 @@ pub fn calculate_loss(
         pos = edge.target();
         prev_label = Some(edge.label);
     }
-    for &prev_fid in provider.get_feature_set(prev_label.unwrap()).left() {
+    for &prev_fid in provider.get_feature_set(prev_label.unwrap()).bigram_left() {
         if let Some(prev_fid) = prev_fid {
             let prev_fid = usize::try_from(prev_fid.get()).unwrap();
             if let Some(&fid) = bigram_fids[prev_fid].get(&0) {
