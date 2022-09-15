@@ -43,7 +43,7 @@ pub struct Node {
 impl Node {
     /// Returns a list of edges.
     ///
-    /// In training, the first edge is treated as the positive example.
+    /// In training, the first edge is treated as a positive example.
     #[inline(always)]
     pub fn edges(&self) -> &[Edge] {
         &self.edges
@@ -61,6 +61,10 @@ impl Lattice {
     /// # Arguments
     ///
     /// * `length` - The length of this lattice.
+    ///
+    /// # Errors
+    ///
+    /// `length` must be >= 1.
     #[inline(always)]
     pub fn new(length: usize) -> Result<Self> {
         if length == 0 {
@@ -73,10 +77,19 @@ impl Lattice {
     /// Adds a new edge.
     ///
     /// In training, the first edge of each position is treated as the positive example.
+    ///
+    /// # Errors
+    ///
+    /// `edge.target()` must be >= `pos` and <= `length`.
     #[inline(always)]
     pub fn add_edge(&mut self, pos: usize, edge: Edge) -> Result<()> {
         if edge.target() <= pos {
-            return Err(RucrfError::invalid_argument("edge.target() must be >= pos"));
+            return Err(RucrfError::invalid_argument("edge.target() must be > pos"));
+        }
+        if edge.target() > self.nodes.len() {
+            return Err(RucrfError::invalid_argument(
+                "edge.target() must be <= length",
+            ));
         }
         self.nodes[pos].edges.push(edge);
         Ok(())

@@ -201,6 +201,10 @@ impl Trainer {
     }
 
     /// Sets the maximum number of iterations.
+    ///
+    /// # Errors
+    ///
+    /// `max_iter` must be >= 1.
     pub const fn max_iter(mut self, max_iter: u64) -> Result<Self> {
         if max_iter == 0 {
             return Err(RucrfError::invalid_argument("max_iter must be >= 1"));
@@ -210,6 +214,10 @@ impl Trainer {
     }
 
     /// Sets regularization settings.
+    ///
+    /// # Errors
+    ///
+    /// `lambda` must be >= 0.
     pub fn regularization(mut self, regularization: Regularization, lambda: f64) -> Result<Self> {
         if lambda < 0.0 {
             return Err(RucrfError::invalid_argument("lambda must be >= 0"));
@@ -220,6 +228,10 @@ impl Trainer {
     }
 
     /// Sets the number of threads.
+    ///
+    /// # Errors
+    ///
+    /// `n_threads` must be >= 1.
     pub const fn n_threads(mut self, n_threads: usize) -> Result<Self> {
         if n_threads == 0 {
             return Err(RucrfError::invalid_argument("n_thread must be >= 1"));

@@ -10,6 +10,7 @@ use bincode::{
 };
 use hashbrown::HashMap;
 
+use crate::errors::{Result, RucrfError};
 use crate::feature::{self, FeatureProvider};
 use crate::lattice::{Edge, Lattice};
 use crate::utils::FromU32;
@@ -84,15 +85,14 @@ impl RawModel {
     /// This process integrates the features, so that each edge has three items: a uni-gram cost,
     /// a left-connection ID, and a right-connection ID.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Generated left/right bi-gram ID must be smaller than 2^32.
-    #[must_use]
-    pub fn merge(&self) -> MergedModel {
+    /// Generated left/right connection ID must be smaller than 2^32.
+    pub fn merge(&self) -> Result<MergedModel> {
         let mut left_conn_ids = HashMap::new();
         let mut right_conn_ids = HashMap::new();
-        let mut left_conn_ids_rev = vec![];
-        let mut right_conn_ids_rev = vec![];
+        let mut left_conn_to_right_feats = vec![];
+        let mut right_conn_to_left_feats = vec![];
         let mut new_feature_sets = vec![];
         for feature_set in &self.provider.feature_sets {
             let mut weight = 0.0;
@@ -104,30 +104,30 @@ impl RawModel {
                 }
             }
             let left_id = {
+                let new_id = u32::try_from(left_conn_to_right_feats.len() + 1)
+                    .map_err(|_| RucrfError::model_scale("connection ID too large"))?;
                 *left_conn_ids
                     .raw_entry_mut()
                     .from_key(feature_set.bigram_right())
                     .or_insert_with(|| {
                         let features = feature_set.bigram_right().to_vec();
-                        left_conn_ids_rev.push(features.clone());
-                        let new_id =
-                            NonZeroU32::new(u32::try_from(left_conn_ids_rev.len()).unwrap())
-                                .unwrap();
-                        (features, new_id)
+                        left_conn_to_right_feats.push(features.clone());
+                        // Safety: new_id is always greater than or equal to 1.
+                        (features, unsafe { NonZeroU32::new_unchecked(new_id) })
                     })
                     .1
             };
             let right_id = {
+                let new_id = u32::try_from(right_conn_to_left_feats.len() + 1)
+                    .map_err(|_| RucrfError::model_scale("connection ID too large"))?;
                 *right_conn_ids
                     .raw_entry_mut()
                     .from_key(feature_set.bigram_left())
                     .or_insert_with(|| {
                         let features = feature_set.bigram_left().to_vec();
-                        right_conn_ids_rev.push(features.clone());
-                        let new_id =
-                            NonZeroU32::new(u32::try_from(right_conn_ids_rev.len()).unwrap())
-                                .unwrap();
-                        (features, new_id)
+                        right_conn_to_left_feats.push(features.clone());
+                        // Safety: new_id is always greater than or equal to 1.
+                        (features, unsafe { NonZeroU32::new_unchecked(new_id) })
                     })
                     .1
             };
@@ -141,7 +141,7 @@ impl RawModel {
 
         // BOS
         let mut m = HashMap::new();
-        for (i, left_ids) in left_conn_ids_rev.iter().enumerate() {
+        for (i, left_ids) in left_conn_to_right_feats.iter().enumerate() {
             let mut weight = 0.0;
             for fid in left_ids.iter().flatten() {
                 if let Some(&fid) = self.bigram_fids[0].get(&fid.get()) {
@@ -149,12 +149,16 @@ impl RawModel {
                 }
             }
             if weight.abs() >= f64::EPSILON {
-                m.insert(u32::try_from(i + 1).unwrap(), weight);
+                m.insert(
+                    u32::try_from(i + 1)
+                        .map_err(|_| RucrfError::model_scale("connection ID too large"))?,
+                    weight,
+                );
             }
         }
         matrix.push(m);
 
-        for right_ids in &right_conn_ids_rev {
+        for right_ids in &right_conn_to_left_feats {
             let mut m = HashMap::new();
 
             // EOS
@@ -169,7 +173,7 @@ impl RawModel {
                 m.insert(0, weight);
             }
 
-            for (i, left_ids) in left_conn_ids_rev.iter().enumerate() {
+            for (i, left_ids) in left_conn_to_right_feats.iter().enumerate() {
                 let mut weight = 0.0;
                 for (right_id, left_id) in right_ids.iter().zip(left_ids) {
                     if let (Some(right_id), Some(left_id)) = (right_id, left_id) {
@@ -181,19 +185,23 @@ impl RawModel {
                     }
                 }
                 if weight.abs() >= f64::EPSILON {
-                    m.insert(u32::try_from(i + 1).unwrap(), weight);
+                    m.insert(
+                        u32::try_from(i + 1)
+                            .map_err(|_| RucrfError::model_scale("connection ID too large"))?,
+                        weight,
+                    );
                 }
             }
 
             matrix.push(m);
         }
 
-        MergedModel {
+        Ok(MergedModel {
             feature_sets: new_feature_sets,
             matrix,
-            left_ids: left_conn_ids_rev,
-            right_ids: right_conn_ids_rev,
-        }
+            left_conn_to_right_feats,
+            right_conn_to_left_feats,
+        })
     }
 }
 
@@ -279,10 +287,10 @@ pub struct MergedModel {
     pub feature_sets: Vec<MergedFeatureSet>,
     /// Bi-gram weight matrix.
     pub matrix: Vec<HashMap<u32, f64>>,
-    /// Reverse mapping of left connection IDs and right bi-gram feature IDs.
-    pub left_ids: Vec<Vec<Option<NonZeroU32>>>,
-    /// Reverse mapping of right connection IDs and left bi-gram feature IDs.
-    pub right_ids: Vec<Vec<Option<NonZeroU32>>>,
+    /// Relation between the left connection IDs and the right bi-gram feature IDs.
+    pub left_conn_to_right_feats: Vec<Vec<Option<NonZeroU32>>>,
+    /// Relation between the right connection IDs and the left bi-gram feature IDs.
+    pub right_conn_to_left_feats: Vec<Vec<Option<NonZeroU32>>>,
 }
 
 impl Model for MergedModel {
@@ -305,13 +313,13 @@ impl Model for MergedModel {
                 let curr_id = curr_label.map_or(Some(0), |label| {
                     self.feature_sets
                         .get(usize::from_u32(label.get() - 1))
-                        .map(|s| s.left_id.get())
+                        .map(|s| s.right_id.get())
                 });
                 for (p, &(_, _, next_label, mut score)) in best_scores[k].iter().enumerate() {
                     let next_id = next_label.map_or(Some(0), |label| {
                         self.feature_sets
                             .get(usize::from_u32(label.get() - 1))
-                            .map(|s| s.right_id.get())
+                            .map(|s| s.left_id.get())
                     });
                     if let (Some(curr_id), Some(next_id)) = (curr_id, next_id) {
                         score += self
@@ -454,7 +462,7 @@ mod tests {
             ],
             provider: test_utils::generate_test_feature_provider(),
         };
-        let compiled_model = model.merge();
+        let compiled_model = model.merge().unwrap();
 
         let lattice = test_utils::generate_test_lattice();
 

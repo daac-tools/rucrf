@@ -11,12 +11,6 @@ pub struct InvalidArgumentError {
     msg: &'static str,
 }
 
-/// The error type for Rucrf.
-#[derive(Debug)]
-pub enum RucrfError {
-    InvalidArgument(InvalidArgumentError),
-}
-
 impl fmt::Display for InvalidArgumentError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "InvalidArgumentError: {}", self.msg)
@@ -26,10 +20,37 @@ impl fmt::Display for InvalidArgumentError {
 #[cfg(feature = "std")]
 impl Error for InvalidArgumentError {}
 
+/// Error used when the model becomes too large.
+#[derive(Debug)]
+pub struct ModelScaleError {
+    msg: &'static str,
+}
+
+impl fmt::Display for ModelScaleError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "ModelScaleError: {}", self.msg)
+    }
+}
+
+#[cfg(feature = "std")]
+impl Error for ModelScaleError {}
+
+/// The error type for Rucrf.
+#[derive(Debug)]
+pub enum RucrfError {
+    InvalidArgument(InvalidArgumentError),
+    ModelScale(ModelScaleError),
+}
+
 impl RucrfError {
     /// Creates a new [`InvalidArgumentError`].
     pub const fn invalid_argument(msg: &'static str) -> Self {
         Self::InvalidArgument(InvalidArgumentError { msg })
+    }
+
+    /// Creates a new [`ModelScaleError`].
+    pub const fn model_scale(msg: &'static str) -> Self {
+        Self::ModelScale(ModelScaleError { msg })
     }
 }
 
@@ -37,6 +58,7 @@ impl fmt::Display for RucrfError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::InvalidArgument(e) => e.fmt(f),
+            Self::ModelScale(e) => e.fmt(f),
         }
     }
 }

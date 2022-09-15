@@ -68,6 +68,7 @@ jobs:
             -W clippy::cast_possible_wrap
             -W clippy::cloned_instead_of_copied
             -W clippy::map_unwrap_or
+            -W clippy::missing_errors_doc
             -W clippy::missing_panics_doc
             -W clippy::must_use_candidate
             -W clippy::redundant_closure_for_method-calls
