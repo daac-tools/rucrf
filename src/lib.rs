@@ -147,7 +147,9 @@ pub mod errors;
 mod feature;
 mod lattice;
 mod model;
+mod solvers;
 mod utils;
+mod vector;
 
 #[cfg(feature = "train")]
 mod forward_backward;

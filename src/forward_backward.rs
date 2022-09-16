@@ -9,16 +9,20 @@ use crate::feature::FeatureProvider;
 use crate::lattice::Lattice;
 use crate::math;
 use crate::utils::FromU32;
+use crate::vector::{GradientVector, WeightVector};
 
-pub fn calculate_alphas_betas(
+pub fn calculate_alphas_betas<W>(
     lattice: &Lattice,
     provider: &FeatureProvider,
-    weights: &[f64],
+    weights: &W,
     unigram_fids: &[u32],
     bigram_fids: &[HashMap<u32, u32>],
     alphas: &mut Vec<Vec<(usize, Option<NonZeroU32>, f64)>>,
     betas: &mut Vec<Vec<(usize, Option<NonZeroU32>, f64)>>,
-) -> f64 {
+) -> f64
+where
+    W: WeightVector,
+{
     if alphas.len() < lattice.nodes().len() {
         alphas.resize(lattice.nodes().len(), vec![]);
         betas.resize(lattice.nodes().len(), vec![]);
@@ -39,7 +43,7 @@ pub fn calculate_alphas_betas(
             for &fid in provider.get_feature_set(edge.label).unigram() {
                 let fid = usize::try_from(fid.get() - 1).unwrap();
                 let fid = unigram_fids[fid];
-                score += weights[usize::from_u32(fid)];
+                score += weights.get_weight(usize::from_u32(fid));
             }
             alphas[edge.target()].push((i, Some(edge.label), score));
             betas.push((edge.target(), Some(edge.label), score));
@@ -53,7 +57,7 @@ pub fn calculate_alphas_betas(
             let mut score_total = f64::NEG_INFINITY;
             for &(_, prev_label, mut score) in &alphas[k] {
                 apply_bigram(prev_label, curr_label, provider, bigram_fids, |fid| {
-                    score += weights[usize::from_u32(fid)];
+                    score += weights.get_weight(usize::from_u32(fid));
                 });
                 score_total = math::logsumexp(score_total, score);
             }
@@ -68,7 +72,7 @@ pub fn calculate_alphas_betas(
             let mut score_total = f64::NEG_INFINITY;
             for &(_, next_label, mut score) in &betas[k] {
                 apply_bigram(curr_label, next_label, provider, bigram_fids, |fid| {
-                    score += weights[usize::from_u32(fid)];
+                    score += weights.get_weight(usize::from_u32(fid));
                 });
                 score_total = math::logsumexp(score_total, score);
             }
@@ -79,21 +83,24 @@ pub fn calculate_alphas_betas(
     let mut score_total = f64::NEG_INFINITY;
     for &(_, next_label, mut score) in &betas[0] {
         apply_bigram(None, next_label, provider, bigram_fids, |fid| {
-            score += weights[usize::from_u32(fid)];
+            score += weights.get_weight(usize::from_u32(fid));
         });
         score_total = math::logsumexp(score_total, score);
     }
     score_total
 }
 
-pub fn calculate_loss(
+pub fn calculate_loss<W>(
     lattice: &Lattice,
     provider: &FeatureProvider,
-    weights: &[f64],
+    weights: &W,
     unigram_fids: &[u32],
     bigram_fids: &[HashMap<u32, u32>],
     z: f64,
-) -> f64 {
+) -> f64
+where
+    W: WeightVector,
+{
     let mut log_prob = z;
     let mut pos = 0;
     let mut prev_label = None;
@@ -103,10 +110,10 @@ pub fn calculate_loss(
         for &fid in provider.get_feature_set(edge.label).unigram() {
             let fid = usize::from_u32(fid.get() - 1);
             let fid = usize::from_u32(unigram_fids[fid]);
-            log_prob -= weights[fid];
+            log_prob -= weights.get_weight(fid);
         }
         apply_bigram(prev_label, Some(edge.label), provider, bigram_fids, |fid| {
-            log_prob -= weights[usize::from_u32(fid)];
+            log_prob -= weights.get_weight(usize::from_u32(fid));
         });
         pos = edge.target();
         prev_label = Some(edge.label);
@@ -115,7 +122,7 @@ pub fn calculate_loss(
         if let Some(prev_fid) = prev_fid {
             let prev_fid = usize::try_from(prev_fid.get()).unwrap();
             if let Some(&fid) = bigram_fids[prev_fid].get(&0) {
-                log_prob -= weights[usize::from_u32(fid)];
+                log_prob -= weights.get_weight(usize::from_u32(fid));
             }
         }
     }
@@ -123,36 +130,39 @@ pub fn calculate_loss(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn update_gradient(
+pub fn update_gradient<W, G>(
     lattice: &Lattice,
     provider: &FeatureProvider,
-    weights: &[f64],
+    weights: &W,
     unigram_fids: &[u32],
     bigram_fids: &[HashMap<u32, u32>],
     alphas: &[Vec<(usize, Option<NonZeroU32>, f64)>],
     betas: &[Vec<(usize, Option<NonZeroU32>, f64)>],
     z: f64,
-    gradients: &mut [f64],
-) {
+    gradients: &mut G,
+) where
+    W: WeightVector,
+    G: GradientVector,
+{
     for (alphas, betas) in alphas.iter().zip(betas).take(lattice.nodes().len()) {
         for &(_, prev_label, alpha) in alphas {
             let mut prob_total = 0.0;
             for &(_, next_label, beta) in betas {
                 let mut log_prob = alpha + beta - z;
                 apply_bigram(prev_label, next_label, provider, bigram_fids, |fid| {
-                    log_prob += weights[usize::from_u32(fid)];
+                    log_prob += weights.get_weight(usize::from_u32(fid));
                 });
                 let prob = log_prob.exp();
                 prob_total += prob;
                 apply_bigram(prev_label, next_label, provider, bigram_fids, |fid| {
-                    gradients[usize::from_u32(fid)] += prob;
+                    gradients.add(usize::from_u32(fid), prob);
                 });
             }
             if let Some(prev_label) = prev_label {
                 for &fid in provider.get_feature_set(prev_label).unigram() {
                     let fid = usize::try_from(fid.get() - 1).unwrap();
                     let fid = usize::from_u32(unigram_fids[fid]);
-                    gradients[fid] += prob_total;
+                    gradients.add(fid, prob_total);
                 }
             }
         }
@@ -164,15 +174,15 @@ pub fn update_gradient(
         for &fid in provider.get_feature_set(edge.label).unigram() {
             let fid = usize::try_from(fid.get() - 1).unwrap();
             let fid = usize::from_u32(unigram_fids[fid]);
-            gradients[fid] -= 1.0;
+            gradients.add(fid, -1.0);
         }
         apply_bigram(prev_label, Some(edge.label), provider, bigram_fids, |fid| {
-            gradients[usize::from_u32(fid)] -= 1.0;
+            gradients.add(usize::from_u32(fid), -1.0);
         });
         pos = edge.target();
         prev_label = Some(edge.label);
     }
     apply_bigram(prev_label, None, provider, bigram_fids, |fid| {
-        gradients[usize::from_u32(fid)] -= 1.0;
+        gradients.add(usize::from_u32(fid), -1.0);
     });
 }
