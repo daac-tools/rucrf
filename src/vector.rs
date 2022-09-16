@@ -15,6 +15,7 @@ impl WeightVector for Vec<f64> {
     }
 }
 
+#[derive(Clone)]
 pub struct RegularizedWeightVector<F> {
     step: usize,
     last_update: Vec<usize>,
@@ -24,7 +25,7 @@ pub struct RegularizedWeightVector<F> {
 
 impl<F> RegularizedWeightVector<F>
 where
-    F: Fn(f64, usize, usize) -> f64,
+    F: Fn(f64, usize, usize) -> f64 + Clone,
 {
     #[inline(always)]
     pub fn new(n: usize, f: F) -> Self {
@@ -39,6 +40,18 @@ where
     #[inline(always)]
     pub fn increment_step(&mut self) {
         self.step += 1;
+    }
+
+    #[inline(always)]
+    pub fn reset(&mut self) {
+        self.weights.fill(0.0);
+    }
+
+    #[inline(always)]
+    pub fn add_other_params(&mut self, other: &Self, factor: f64) {
+        for (w1, w2) in self.weights.iter_mut().zip(&other.weights) {
+            *w1 += w2 * factor;
+        }
     }
 }
 
@@ -92,12 +105,12 @@ impl SparseGrdientVector {
     }
 
     #[inline(always)]
-    pub fn merge_gradients<G>(&mut self, other: &mut G)
+    pub fn merge_gradients<G>(&mut self, other: &mut G, factor: f64)
     where
         G: GradientVector,
     {
         for &(index, value) in &self.gradients {
-            other.add(index, value);
+            other.add(index, value * factor);
         }
         self.gradients.clear();
     }

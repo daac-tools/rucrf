@@ -4,6 +4,7 @@ use std::thread;
 use alloc::vec::Vec;
 
 use hashbrown::HashMap;
+use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
 
 use crate::vector::{RegularizedWeightVector, SparseGrdientVector, WeightVector};
@@ -82,23 +83,29 @@ impl<'a> LatticesLoss<'a> {
         })
     }
 
-    fn gradient<F>(&self, param: &RegularizedWeightVector<F>, select: &[usize]) -> SparseGrdientVector where F: Fn(f64, usize, usize) -> f64 + Send + Sync{
+    fn update<F>(&self, param: &mut RegularizedWeightVector<F>, eta: f64, rng: &mut ThreadRng) where F: Fn(f64, usize, usize) -> f64 + Send + Sync + Clone {
         let (s, r) = crossbeam_channel::unbounded();
-        for &id in select {
-            s.send(&self.lattices[id]).unwrap();
+        let mut lattices: Vec<_> = self.lattices.iter().collect();
+        lattices.shuffle(rng);
+        for lattice in lattices {
+            s.send(lattice).unwrap();
         }
-        let gradients = Mutex::new(SparseGrdientVector::new());
+        let mut new_param = param.clone();
+        new_param.reset();
+        let new_param = Mutex::new(new_param);
         thread::scope(|scope| {
             for _ in 0..self.n_threads {
                 scope.spawn(|| {
                     let mut alphas = vec![];
                     let mut betas = vec![];
+                    let mut param = param.clone();
                     let mut local_gradients = SparseGrdientVector::new();
+                    let mut cnt = 0;
                     while let Ok(lattice) = r.try_recv() {
                         let z = forward_backward::calculate_alphas_betas(
                             lattice,
                             self.provider,
-                            param,
+                            &param,
                             &self.unigram_fids,
                             &self.bigram_fids,
                             &mut alphas,
@@ -107,7 +114,7 @@ impl<'a> LatticesLoss<'a> {
                         forward_backward::update_gradient(
                             lattice,
                             self.provider,
-                            param,
+                            &param,
                             &self.unigram_fids,
                             &self.bigram_fids,
                             &alphas,
@@ -115,12 +122,17 @@ impl<'a> LatticesLoss<'a> {
                             z,
                             &mut local_gradients,
                         );
+                        local_gradients.apply_gradients(&mut param, eta);
+                        param.increment_step();
+                        cnt += 1;
                     }
-                    local_gradients.merge_gradients(&mut *gradients.lock().unwrap());
+                    let factor = cnt as f64 / self.lattices.len() as f64;
+                    new_param.lock().unwrap().add_other_params(&param, factor);
                 });
             }
         });
-        gradients.into_inner().unwrap()
+        param.reset();
+        param.add_other_params(&*new_param.lock().unwrap(), 1.0);
     }
 }
 
@@ -145,7 +157,6 @@ pub fn solve(
 
     let eta = 1e-2;
 
-    let mut indices: Vec<_> = (0..lattices.len()).collect();
     let mut rng = rand::thread_rng();
 
     match regularization {
@@ -158,12 +169,7 @@ pub fn solve(
                 }
             });
             for _ in 0..max_iter {
-                indices.shuffle(&mut rng);
-                for batch in indices.chunks(100) {
-                    let mut grad = loss_function.gradient(&param, batch);
-                    grad.apply_gradients(&mut param, eta);
-                    param.increment_step();
-                }
+                loss_function.update(&mut param, eta, &mut rng);
                 let reg: f64 = (0..weights_init.len()).map(|i| param.get_weight(i).abs()).sum();
                 dbg!(loss_function.cost(&param) + lambda * reg);
             }
@@ -174,12 +180,7 @@ pub fn solve(
                 w * (1.0 - lambda * eta).powf((t - last_update) as f64)
             });
             for _ in 0..max_iter {
-                indices.shuffle(&mut rng);
-                for batch in indices.chunks(100) {
-                    let mut grad = loss_function.gradient(&param, batch);
-                    grad.apply_gradients(&mut param, eta);
-                    param.increment_step();
-                }
+                loss_function.update(&mut param, eta, &mut rng);
                 let reg: f64 = (0..weights_init.len()).map(|i| param.get_weight(i).abs().powi(2)).sum();
                 dbg!(loss_function.cost(&param) + lambda * reg);
             }
