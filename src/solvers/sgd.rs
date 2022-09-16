@@ -168,6 +168,7 @@ pub fn solve(
                     (w + (t - last_update) as f64 * lambda * eta).min(0.0)
                 }
             });
+            dbg!(loss_function.cost(&param));
             for _ in 0..max_iter {
                 loss_function.update(&mut param, eta, &mut rng);
                 let reg: f64 = (0..weights_init.len()).map(|i| param.get_weight(i).abs()).sum();
@@ -179,6 +180,7 @@ pub fn solve(
             let mut param = RegularizedWeightVector::new(weights_init.len(), |w, t, last_update| {
                 w * (1.0 - lambda * eta).powf((t - last_update) as f64)
             });
+            dbg!(loss_function.cost(&param));
             for _ in 0..max_iter {
                 loss_function.update(&mut param, eta, &mut rng);
                 let reg: f64 = (0..weights_init.len()).map(|i| param.get_weight(i).abs().powi(2)).sum();
