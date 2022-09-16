@@ -4,6 +4,7 @@ use std::thread;
 use alloc::vec::Vec;
 
 use hashbrown::HashMap;
+use rand::seq::SliceRandom;
 
 use crate::vector::{RegularizedWeightVector, SparseGrdientVector, WeightVector};
 use crate::feature::FeatureProvider;
@@ -144,6 +145,9 @@ pub fn solve(
 
     let eta = 1e-2;
 
+    let mut indices: Vec<_> = (0..lattices.len()).collect();
+    let mut rng = rand::thread_rng();
+
     match regularization {
         Regularization::L1 => {
             let mut param = RegularizedWeightVector::new(weights_init.len(), |w, t, last_update| {
@@ -154,8 +158,9 @@ pub fn solve(
                 }
             });
             for _ in 0..max_iter {
-                for i in 0..lattices.len() {
-                    let mut grad = loss_function.gradient(&param, &[i]);
+                indices.shuffle(&mut rng);
+                for batch in indices.chunks(100) {
+                    let mut grad = loss_function.gradient(&param, batch);
                     grad.apply_gradients(&mut param, eta);
                     param.increment_step();
                 }
@@ -169,8 +174,9 @@ pub fn solve(
                 w * (1.0 - lambda * eta).powf((t - last_update) as f64)
             });
             for _ in 0..max_iter {
-                for i in 0..lattices.len() {
-                    let mut grad = loss_function.gradient(&param, &[i]);
+                indices.shuffle(&mut rng);
+                for batch in indices.chunks(100) {
+                    let mut grad = loss_function.gradient(&param, batch);
                     grad.apply_gradients(&mut param, eta);
                     param.increment_step();
                 }

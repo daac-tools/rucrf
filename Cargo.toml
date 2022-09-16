@@ -19,6 +19,7 @@ hashbrown = "0.12" # MIT or Apache-2.0
 argmin = { version = "0.7.0", optional = true } # MIT or Apache-2.0
 argmin-math = { version = "0.2.0", optional = true } # MIT or Apache-2.0
 crossbeam-channel = { version = "0.5.6", optional = true } # MIT or Apache-2.0
+rand = "*"
 
 [features]
 default = ["train"]
