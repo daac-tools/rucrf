@@ -184,7 +184,11 @@ impl RawModel {
                     if let (Some(right_id), Some(left_id)) = (right_id, left_id) {
                         let right_id = usize::from_u32(right_id.get());
                         let left_id = left_id.get();
-                        if let Some(&fid) = self.bigram_fids.get(right_id).and_then(|hm| hm.get(&left_id)) {
+                        if let Some(&fid) = self
+                            .bigram_fids
+                            .get(right_id)
+                            .and_then(|hm| hm.get(&left_id))
+                        {
                             weight += self.weights[usize::from_u32(fid)];
                         }
                     }
