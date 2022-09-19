@@ -212,6 +212,21 @@ impl RawModel {
             right_conn_to_left_feats,
         })
     }
+
+    /// Returns the relation between uni-gram feature IDs and weight indices.
+    pub fn unigram_feature_ids(&self) -> &[Option<NonZeroU32>] {
+        &self.unigram_fids
+    }
+
+    /// Returns the relation between bi-gram feature IDs and weight indices.
+    pub fn bigram_feature_ids(&self) -> &[HashMap<u32, u32>] {
+        &self.bigram_fids
+    }
+
+    /// Returns weights.
+    pub fn weights(&self) -> &[f64] {
+        &self.weights
+    }
 }
 
 impl Model for RawModel {
