@@ -80,6 +80,11 @@ impl RawModel {
         }
     }
 
+    /// Returns a mutable reference of the feature provider.
+    pub fn feature_provider(&mut self) -> &mut FeatureProvider {
+        &mut self.provider
+    }
+
     /// Merges this model and returns [`MergedModel`].
     ///
     /// This process integrates the features, so that each edge has three items: a uni-gram cost,
