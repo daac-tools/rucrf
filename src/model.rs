@@ -213,11 +213,13 @@ impl Model for RawModel {
         for (i, node) in lattice.nodes().iter().enumerate() {
             for edge in node.edges() {
                 let mut score = 0.0;
-                for &fid in self.provider.get_feature_set(edge.label).unigram() {
-                    let fid = usize::from_u32(fid.get() - 1);
-                    if let Some(fid) = self.unigram_fids[fid] {
-                        let fid = usize::from_u32(fid.get());
-                        score += self.weights[fid];
+                if let Some(feature_set) = self.provider.get_feature_set(edge.label) {
+                    for &fid in feature_set.unigram() {
+                        let fid = usize::from_u32(fid.get() - 1);
+                        if let Some(fid) = self.unigram_fids[fid] {
+                            let fid = usize::from_u32(fid.get());
+                            score += self.weights[fid];
+                        }
                     }
                 }
                 best_scores[i].push((edge.target(), 0, Some(edge.label), score));

@@ -20,35 +20,45 @@ pub fn apply_bigram<F>(
 {
     match (left_label, right_label) {
         (Some(left_label), Some(right_label)) => {
-            let left_features = provider.get_feature_set(left_label).bigram_left();
-            let right_features = provider.get_feature_set(right_label).bigram_right();
-            for (&left_fid, &right_fid) in left_features.iter().zip(right_features) {
-                if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
-                    let left_fid = usize::from_u32(left_fid.get());
-                    let right_fid = right_fid.get();
-                    if let Some(&fid) = bigram_fids.get(left_fid).and_then(|hm| hm.get(&right_fid))
-                    {
-                        f(fid);
+            if let (Some(left_feature_set), Some(right_feature_set)) = (
+                provider.get_feature_set(left_label),
+                provider.get_feature_set(right_label),
+            ) {
+                let left_features = left_feature_set.bigram_left();
+                let right_features = right_feature_set.bigram_right();
+                for (&left_fid, &right_fid) in left_features.iter().zip(right_features) {
+                    if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
+                        let left_fid = usize::from_u32(left_fid.get());
+                        let right_fid = right_fid.get();
+                        if let Some(&fid) =
+                            bigram_fids.get(left_fid).and_then(|hm| hm.get(&right_fid))
+                        {
+                            f(fid);
+                        }
                     }
                 }
             }
         }
         (Some(left_label), None) => {
-            for &left_fid in provider.get_feature_set(left_label).bigram_left() {
-                if let Some(left_fid) = left_fid {
-                    let left_fid = usize::from_u32(left_fid.get());
-                    if let Some(&fid) = bigram_fids[left_fid].get(&0) {
-                        f(fid);
+            if let Some(feature_set) = provider.get_feature_set(left_label) {
+                for &left_fid in feature_set.bigram_left() {
+                    if let Some(left_fid) = left_fid {
+                        let left_fid = usize::from_u32(left_fid.get());
+                        if let Some(&fid) = bigram_fids[left_fid].get(&0) {
+                            f(fid);
+                        }
                     }
                 }
             }
         }
         (None, Some(right_label)) => {
-            for &right_fid in provider.get_feature_set(right_label).bigram_right() {
-                if let Some(right_fid) = right_fid {
-                    let right_fid = right_fid.get();
-                    if let Some(&fid) = bigram_fids[0].get(&right_fid) {
-                        f(fid);
+            if let Some(feature_set) = provider.get_feature_set(right_label) {
+                for &right_fid in feature_set.bigram_right() {
+                    if let Some(right_fid) = right_fid {
+                        let right_fid = right_fid.get();
+                        if let Some(&fid) = bigram_fids[0].get(&right_fid) {
+                            f(fid);
+                        }
                     }
                 }
             }
@@ -147,7 +157,8 @@ impl FeatureProvider {
 
     /// Returns the reference to the feature set corresponding to the given ID.
     #[inline(always)]
-    pub(crate) fn get_feature_set(&self, label: NonZeroU32) -> &FeatureSet {
-        &self.feature_sets[usize::try_from(label.get() - 1).unwrap()]
+    pub(crate) fn get_feature_set(&self, label: NonZeroU32) -> Option<&FeatureSet> {
+        self.feature_sets
+            .get(usize::try_from(label.get() - 1).unwrap())
     }
 }

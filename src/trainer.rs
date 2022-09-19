@@ -247,14 +247,16 @@ impl Trainer {
         unigram_fids: &mut Vec<u32>,
         weights: &mut Vec<f64>,
     ) {
-        for &fid in provider.get_feature_set(label).unigram() {
-            let fid = usize::from_u32(fid.get());
-            if unigram_fids.len() <= fid {
-                unigram_fids.resize(fid + 1, 0);
-            }
-            if unigram_fids.len() == fid + 1 {
-                unigram_fids[fid] = u32::try_from(weights.len()).unwrap();
-                weights.push(0.0);
+        if let Some(feature_set) = provider.get_feature_set(label) {
+            for &fid in feature_set.unigram() {
+                let fid = usize::from_u32(fid.get());
+                if unigram_fids.len() <= fid {
+                    unigram_fids.resize(fid + 1, 0);
+                }
+                if unigram_fids.len() == fid + 1 {
+                    unigram_fids[fid] = u32::try_from(weights.len()).unwrap();
+                    weights.push(0.0);
+                }
             }
         }
     }
@@ -269,58 +271,59 @@ impl Trainer {
     ) {
         match (left_label, right_label) {
             (Some(left_label), Some(right_label)) => {
-                let left_features = provider.get_feature_set(left_label).bigram_left();
-                let right_features = provider.get_feature_set(right_label).bigram_right();
-                for (left_fid, right_fid) in left_features.iter().zip(right_features) {
-                    if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
+                if let (Some(left_feature_set), Some(right_feature_set)) = (
+                    provider.get_feature_set(left_label),
+                    provider.get_feature_set(right_label),
+                ) {
+                    let left_features = left_feature_set.bigram_left();
+                    let right_features = right_feature_set.bigram_right();
+                    for (left_fid, right_fid) in left_features.iter().zip(right_features) {
+                        if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
+                            let left_fid = usize::try_from(left_fid.get()).unwrap();
+                            let right_fid = right_fid.get();
+                            if bigram_fids.len() <= left_fid {
+                                bigram_fids.resize(left_fid + 1, HashMap::new());
+                            }
+                            let features = &mut bigram_fids[left_fid];
+                            if let RawEntryMut::Vacant(v) =
+                                features.raw_entry_mut().from_key(&right_fid)
+                            {
+                                v.insert(right_fid, u32::try_from(weights.len()).unwrap());
+                                weights.push(0.0);
+                            }
+                        }
+                    }
+                }
+            }
+            (Some(left_label), None) => {
+                if let Some(feature_set) = provider.get_feature_set(left_label) {
+                    for left_fid in feature_set.bigram_left().iter().flatten() {
                         let left_fid = usize::try_from(left_fid.get()).unwrap();
-                        let right_fid = right_fid.get();
                         if bigram_fids.len() <= left_fid {
                             bigram_fids.resize(left_fid + 1, HashMap::new());
                         }
                         let features = &mut bigram_fids[left_fid];
+                        if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&0) {
+                            v.insert(0, u32::try_from(weights.len()).unwrap());
+                            weights.push(0.0);
+                        }
+                    }
+                }
+            }
+            (None, Some(right_label)) => {
+                if let Some(feature_set) = provider.get_feature_set(right_label) {
+                    for right_fid in feature_set.bigram_right().iter().flatten() {
+                        let right_fid = right_fid.get();
+                        if bigram_fids.is_empty() {
+                            bigram_fids.resize(1, HashMap::new());
+                        }
+                        let features = &mut bigram_fids[0];
                         if let RawEntryMut::Vacant(v) =
                             features.raw_entry_mut().from_key(&right_fid)
                         {
                             v.insert(right_fid, u32::try_from(weights.len()).unwrap());
                             weights.push(0.0);
                         }
-                    }
-                }
-            }
-            (Some(left_label), None) => {
-                for left_fid in provider
-                    .get_feature_set(left_label)
-                    .bigram_left()
-                    .iter()
-                    .flatten()
-                {
-                    let left_fid = usize::try_from(left_fid.get()).unwrap();
-                    if bigram_fids.len() <= left_fid {
-                        bigram_fids.resize(left_fid + 1, HashMap::new());
-                    }
-                    let features = &mut bigram_fids[left_fid];
-                    if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&0) {
-                        v.insert(0, u32::try_from(weights.len()).unwrap());
-                        weights.push(0.0);
-                    }
-                }
-            }
-            (None, Some(right_label)) => {
-                for right_fid in provider
-                    .get_feature_set(right_label)
-                    .bigram_right()
-                    .iter()
-                    .flatten()
-                {
-                    let right_fid = right_fid.get();
-                    if bigram_fids.is_empty() {
-                        bigram_fids.resize(1, HashMap::new());
-                    }
-                    let features = &mut bigram_fids[0];
-                    if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&right_fid) {
-                        v.insert(right_fid, u32::try_from(weights.len()).unwrap());
-                        weights.push(0.0);
                     }
                 }
             }
