@@ -103,7 +103,7 @@ impl RawModel {
             let mut weight = 0.0;
             for fid in feature_set.unigram() {
                 let fid = usize::from_u32(fid.get() - 1);
-                if let Some(fid) = self.unigram_fids[fid] {
+                if let Some(fid) = self.unigram_fids.get(fid).copied().flatten() {
                     let fid = usize::from_u32(fid.get());
                     weight += self.weights[fid];
                 }
@@ -170,7 +170,7 @@ impl RawModel {
             let mut weight = 0.0;
             for fid in right_ids.iter().flatten() {
                 let right_id = usize::from_u32(fid.get());
-                if let Some(&fid) = self.bigram_fids[right_id].get(&0) {
+                if let Some(&fid) = self.bigram_fids.get(right_id).and_then(|hm| hm.get(&0)) {
                     weight += self.weights[usize::from_u32(fid)];
                 }
             }
@@ -184,7 +184,7 @@ impl RawModel {
                     if let (Some(right_id), Some(left_id)) = (right_id, left_id) {
                         let right_id = usize::from_u32(right_id.get());
                         let left_id = left_id.get();
-                        if let Some(&fid) = self.bigram_fids[right_id].get(&left_id) {
+                        if let Some(&fid) = self.bigram_fids.get(right_id).and_then(|hm| hm.get(&left_id)) {
                             weight += self.weights[usize::from_u32(fid)];
                         }
                     }
