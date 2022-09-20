@@ -93,6 +93,7 @@ impl RawModel {
     /// # Errors
     ///
     /// Generated left/right connection ID must be smaller than 2^32.
+    #[allow(clippy::missing_panics_doc)]
     pub fn merge(&self) -> Result<MergedModel> {
         let mut left_conn_ids = HashMap::new();
         let mut right_conn_ids = HashMap::new();
@@ -116,8 +117,7 @@ impl RawModel {
                     .or_insert_with(|| {
                         let features = feature_set.bigram_right().to_vec();
                         left_conn_to_right_feats.push(features.clone());
-                        // Safety: new_id is always greater than or equal to 1.
-                        (features, unsafe { NonZeroU32::new_unchecked(new_id) })
+                        (features, NonZeroU32::new(new_id).unwrap())
                     })
                     .1
             };
@@ -130,8 +130,7 @@ impl RawModel {
                     .or_insert_with(|| {
                         let features = feature_set.bigram_left().to_vec();
                         right_conn_to_left_feats.push(features.clone());
-                        // Safety: new_id is always greater than or equal to 1.
-                        (features, unsafe { NonZeroU32::new_unchecked(new_id) })
+                        (features, NonZeroU32::new(new_id).unwrap())
                     })
                     .1
             };

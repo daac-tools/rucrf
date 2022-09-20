@@ -501,7 +501,7 @@ impl Trainer {
                 *fid = fid.filter(|fid| {
                     !new_bigram_weight_indices
                         .get(usize::from_u32(fid.get()))
-                        .map_or(false, HashMap::is_empty)
+                        .map_or(true, HashMap::is_empty)
                 });
             }
             for fid in &mut feature_set.bigram_right {

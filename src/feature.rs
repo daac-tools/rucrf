@@ -147,13 +147,13 @@ impl FeatureProvider {
     /// # Errors
     ///
     /// The number of features must be less than 2^32 - 1.
+    #[allow(clippy::missing_panics_doc)]
     #[inline(always)]
     pub fn add_feature_set(&mut self, feature_set: FeatureSet) -> Result<NonZeroU32> {
         let new_id = u32::try_from(self.feature_sets.len() + 1)
             .map_err(|_| RucrfError::model_scale("feature set too large"))?;
         self.feature_sets.push(feature_set);
-        // Safety: new_id is always greater than or equal to 1.
-        Ok(unsafe { NonZeroU32::new_unchecked(new_id) })
+        Ok(NonZeroU32::new(new_id).unwrap())
     }
 
     /// Returns the reference to the feature set corresponding to the given ID.
