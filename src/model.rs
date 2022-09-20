@@ -24,8 +24,8 @@ pub trait Model {
 /// Represents a raw model.
 pub struct RawModel {
     weights: Vec<f64>,
-    unigram_fids: Vec<Option<NonZeroU32>>,
-    bigram_fids: Vec<HashMap<u32, u32>>,
+    unigram_weight_indices: Vec<Option<NonZeroU32>>,
+    bigram_weight_indices: Vec<HashMap<u32, u32>>,
     provider: FeatureProvider,
 }
 
@@ -33,13 +33,13 @@ impl Decode for RawModel {
     #[allow(clippy::type_complexity)]
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let weights = Decode::decode(decoder)?;
-        let unigram_fids: Vec<Option<NonZeroU32>> = Decode::decode(decoder)?;
-        let bigram_fids: Vec<Vec<(u32, u32)>> = Decode::decode(decoder)?;
+        let unigram_weight_indices: Vec<Option<NonZeroU32>> = Decode::decode(decoder)?;
+        let bigram_weight_indices: Vec<Vec<(u32, u32)>> = Decode::decode(decoder)?;
         let provider: FeatureProvider = Decode::decode(decoder)?;
         Ok(Self {
             weights,
-            unigram_fids,
-            bigram_fids: bigram_fids
+            unigram_weight_indices,
+            bigram_weight_indices: bigram_weight_indices
                 .into_iter()
                 .map(|v| v.into_iter().collect())
                 .collect(),
@@ -51,14 +51,14 @@ impl Decode for RawModel {
 impl Encode for RawModel {
     #[allow(clippy::type_complexity)]
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        let bigram_fids: Vec<Vec<(u32, u32)>> = self
-            .bigram_fids
+        let bigram_weight_indices: Vec<Vec<(u32, u32)>> = self
+            .bigram_weight_indices
             .iter()
             .map(|v| v.iter().map(|(&k, &v)| (k, v)).collect())
             .collect();
         Encode::encode(&self.weights, encoder)?;
-        Encode::encode(&self.unigram_fids, encoder)?;
-        Encode::encode(&bigram_fids, encoder)?;
+        Encode::encode(&self.unigram_weight_indices, encoder)?;
+        Encode::encode(&bigram_weight_indices, encoder)?;
         Encode::encode(&self.provider, encoder)?;
         Ok(())
     }
@@ -68,14 +68,14 @@ impl RawModel {
     #[cfg(feature = "train")]
     pub(crate) fn new(
         weights: Vec<f64>,
-        unigram_fids: Vec<Option<NonZeroU32>>,
-        bigram_fids: Vec<HashMap<u32, u32>>,
+        unigram_weight_indices: Vec<Option<NonZeroU32>>,
+        bigram_weight_indices: Vec<HashMap<u32, u32>>,
         provider: FeatureProvider,
     ) -> Self {
         Self {
             weights,
-            unigram_fids,
-            bigram_fids,
+            unigram_weight_indices,
+            bigram_weight_indices,
             provider,
         }
     }
@@ -103,9 +103,8 @@ impl RawModel {
             let mut weight = 0.0;
             for fid in feature_set.unigram() {
                 let fid = usize::from_u32(fid.get() - 1);
-                if let Some(fid) = self.unigram_fids.get(fid).copied().flatten() {
-                    let fid = usize::from_u32(fid.get());
-                    weight += self.weights[fid];
+                if let Some(widx) = self.unigram_weight_indices.get(fid).copied().flatten() {
+                    weight += self.weights[usize::from_u32(widx.get() - 1)];
                 }
             }
             let left_id = {
@@ -149,8 +148,8 @@ impl RawModel {
         for (i, left_ids) in left_conn_to_right_feats.iter().enumerate() {
             let mut weight = 0.0;
             for fid in left_ids.iter().flatten() {
-                if let Some(&fid) = self.bigram_fids[0].get(&fid.get()) {
-                    weight += self.weights[usize::from_u32(fid)];
+                if let Some(&widx) = self.bigram_weight_indices[0].get(&fid.get()) {
+                    weight += self.weights[usize::from_u32(widx)];
                 }
             }
             if weight.abs() >= f64::EPSILON {
@@ -170,8 +169,12 @@ impl RawModel {
             let mut weight = 0.0;
             for fid in right_ids.iter().flatten() {
                 let right_id = usize::from_u32(fid.get());
-                if let Some(&fid) = self.bigram_fids.get(right_id).and_then(|hm| hm.get(&0)) {
-                    weight += self.weights[usize::from_u32(fid)];
+                if let Some(&widx) = self
+                    .bigram_weight_indices
+                    .get(right_id)
+                    .and_then(|hm| hm.get(&0))
+                {
+                    weight += self.weights[usize::from_u32(widx)];
                 }
             }
             if weight.abs() >= f64::EPSILON {
@@ -184,12 +187,12 @@ impl RawModel {
                     if let (Some(right_id), Some(left_id)) = (right_id, left_id) {
                         let right_id = usize::from_u32(right_id.get());
                         let left_id = left_id.get();
-                        if let Some(&fid) = self
-                            .bigram_fids
+                        if let Some(&widx) = self
+                            .bigram_weight_indices
                             .get(right_id)
                             .and_then(|hm| hm.get(&left_id))
                         {
-                            weight += self.weights[usize::from_u32(fid)];
+                            weight += self.weights[usize::from_u32(widx)];
                         }
                     }
                 }
@@ -215,14 +218,14 @@ impl RawModel {
 
     /// Returns the relation between uni-gram feature IDs and weight indices.
     #[must_use]
-    pub fn unigram_feature_ids(&self) -> &[Option<NonZeroU32>] {
-        &self.unigram_fids
+    pub fn unigram_weight_indices(&self) -> &[Option<NonZeroU32>] {
+        &self.unigram_weight_indices
     }
 
     /// Returns the relation between bi-gram feature IDs and weight indices.
     #[must_use]
-    pub fn bigram_feature_ids(&self) -> &[HashMap<u32, u32>] {
-        &self.bigram_fids
+    pub fn bigram_weight_indices(&self) -> &[HashMap<u32, u32>] {
+        &self.bigram_weight_indices
     }
 
     /// Returns weights.
@@ -243,9 +246,8 @@ impl Model for RawModel {
                 if let Some(feature_set) = self.provider.get_feature_set(edge.label) {
                     for &fid in feature_set.unigram() {
                         let fid = usize::from_u32(fid.get() - 1);
-                        if let Some(fid) = self.unigram_fids[fid] {
-                            let fid = usize::from_u32(fid.get());
-                            score += self.weights[fid];
+                        if let Some(widx) = self.unigram_weight_indices[fid] {
+                            score += self.weights[usize::from_u32(widx.get() - 1)];
                         }
                     }
                 }
@@ -262,9 +264,9 @@ impl Model for RawModel {
                         curr_label,
                         next_label,
                         &self.provider,
-                        &self.bigram_fids,
-                        |fid| {
-                            score += self.weights[usize::from_u32(fid)];
+                        &self.bigram_weight_indices,
+                        |widx| {
+                            score += self.weights[usize::from_u32(widx)];
                         },
                     );
                     if score > best_score {
@@ -279,9 +281,15 @@ impl Model for RawModel {
         let mut best_score = f64::NEG_INFINITY;
         let mut idx = 0;
         for (p, &(_, _, next_label, mut score)) in best_scores[0].iter().enumerate() {
-            feature::apply_bigram(None, next_label, &self.provider, &self.bigram_fids, |fid| {
-                score += self.weights[usize::from_u32(fid)];
-            });
+            feature::apply_bigram(
+                None,
+                next_label,
+                &self.provider,
+                &self.bigram_weight_indices,
+                |widx| {
+                    score += self.weights[usize::from_u32(widx)];
+                },
+            );
             if score > best_score {
                 best_score = score;
                 idx = p;
@@ -437,13 +445,13 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 13.0, 24.0, 5.0, 26.0, 27.0, 6.0,
             ],
-            unigram_fids: vec![
-                NonZeroU32::new(1),
-                NonZeroU32::new(3),
-                NonZeroU32::new(5),
-                NonZeroU32::new(7),
+            unigram_weight_indices: vec![
+                NonZeroU32::new(2),
+                NonZeroU32::new(4),
+                NonZeroU32::new(6),
+                NonZeroU32::new(8),
             ],
-            bigram_fids: vec![
+            bigram_weight_indices: vec![
                 hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
                 hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
                 hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
@@ -476,13 +484,13 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 13.0, 24.0, 5.0, 26.0, 27.0, 6.0,
             ],
-            unigram_fids: vec![
-                NonZeroU32::new(1),
-                NonZeroU32::new(3),
-                NonZeroU32::new(5),
-                NonZeroU32::new(7),
+            unigram_weight_indices: vec![
+                NonZeroU32::new(2),
+                NonZeroU32::new(4),
+                NonZeroU32::new(6),
+                NonZeroU32::new(8),
             ],
-            bigram_fids: vec![
+            bigram_weight_indices: vec![
                 hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
                 hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
                 hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
@@ -491,11 +499,11 @@ mod tests {
             ],
             provider: test_utils::generate_test_feature_provider(),
         };
-        let compiled_model = model.merge().unwrap();
+        let merged_model = model.merge().unwrap();
 
         let lattice = test_utils::generate_test_lattice();
 
-        let (path, score) = compiled_model.search_best_path(&lattice);
+        let (path, score) = merged_model.search_best_path(&lattice);
 
         assert_eq!(
             vec![

@@ -1,8 +1,9 @@
 use core::num::NonZeroU32;
-use std::sync::Mutex;
-use std::thread;
 
 use alloc::vec::Vec;
+
+use std::sync::Mutex;
+use std::thread;
 
 use argmin::{
     core::{
@@ -16,18 +17,18 @@ use argmin::{
 };
 use hashbrown::{hash_map::RawEntryMut, HashMap, HashSet};
 
-use crate::errors::Result;
+use crate::errors::{Result, RucrfError};
+use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
 use crate::utils::FromU32;
-use crate::{errors::RucrfError, feature::FeatureProvider};
 
 struct LatticesLoss<'a> {
     lattices: &'a [Lattice],
     provider: &'a FeatureProvider,
-    unigram_fids: Vec<u32>,
-    bigram_fids: Vec<HashMap<u32, u32>>,
+    unigram_weight_indices: Vec<Option<NonZeroU32>>,
+    bigram_weight_indices: Vec<HashMap<u32, u32>>,
     n_threads: usize,
     l2_lambda: Option<f64>,
 }
@@ -36,16 +37,16 @@ impl<'a> LatticesLoss<'a> {
     fn new(
         lattices: &'a [Lattice],
         provider: &'a FeatureProvider,
-        unigram_fids: Vec<u32>,
-        bigram_fids: Vec<HashMap<u32, u32>>,
+        unigram_weight_indices: Vec<Option<NonZeroU32>>,
+        bigram_weight_indices: Vec<HashMap<u32, u32>>,
         n_threads: usize,
         l2_lambda: Option<f64>,
     ) -> Self {
         Self {
             lattices,
             provider,
-            unigram_fids,
-            bigram_fids,
+            unigram_weight_indices,
+            bigram_weight_indices,
             n_threads,
             l2_lambda,
         }
@@ -73,8 +74,8 @@ impl<'a> CostFunction for LatticesLoss<'a> {
                             lattice,
                             self.provider,
                             param,
-                            &self.unigram_fids,
-                            &self.bigram_fids,
+                            &self.unigram_weight_indices,
+                            &self.bigram_weight_indices,
                             &mut alphas,
                             &mut betas,
                         );
@@ -82,8 +83,8 @@ impl<'a> CostFunction for LatticesLoss<'a> {
                             lattice,
                             self.provider,
                             param,
-                            &self.unigram_fids,
-                            &self.bigram_fids,
+                            &self.unigram_weight_indices,
+                            &self.bigram_weight_indices,
                             z,
                         );
                         loss_total += loss;
@@ -133,8 +134,8 @@ impl<'a> Gradient for LatticesLoss<'a> {
                             lattice,
                             self.provider,
                             param,
-                            &self.unigram_fids,
-                            &self.bigram_fids,
+                            &self.unigram_weight_indices,
+                            &self.bigram_weight_indices,
                             &mut alphas,
                             &mut betas,
                         );
@@ -142,8 +143,8 @@ impl<'a> Gradient for LatticesLoss<'a> {
                             lattice,
                             self.provider,
                             param,
-                            &self.unigram_fids,
-                            &self.bigram_fids,
+                            &self.unigram_weight_indices,
+                            &self.bigram_weight_indices,
                             &alphas,
                             &betas,
                             z,
@@ -244,17 +245,18 @@ impl Trainer {
     fn update_unigram_feature(
         provider: &FeatureProvider,
         label: NonZeroU32,
-        unigram_fids: &mut Vec<u32>,
+        unigram_weight_indices: &mut Vec<Option<NonZeroU32>>,
         weights: &mut Vec<f64>,
     ) {
         if let Some(feature_set) = provider.get_feature_set(label) {
             for &fid in feature_set.unigram() {
-                let fid = usize::from_u32(fid.get());
-                if unigram_fids.len() <= fid {
-                    unigram_fids.resize(fid + 1, 0);
+                let fid = usize::from_u32(fid.get() - 1);
+                if unigram_weight_indices.len() <= fid + 1 {
+                    unigram_weight_indices.resize(fid + 1, None);
                 }
-                if unigram_fids.len() == fid + 1 {
-                    unigram_fids[fid] = u32::try_from(weights.len()).unwrap();
+                if unigram_weight_indices[fid].is_none() {
+                    unigram_weight_indices[fid] =
+                        Some(NonZeroU32::new(u32::try_from(weights.len()).unwrap() + 1).unwrap());
                     weights.push(0.0);
                 }
             }
@@ -266,7 +268,7 @@ impl Trainer {
         provider: &FeatureProvider,
         left_label: Option<NonZeroU32>,
         right_label: Option<NonZeroU32>,
-        bigram_fids: &mut Vec<HashMap<u32, u32>>,
+        bigram_weight_indices: &mut Vec<HashMap<u32, u32>>,
         weights: &mut Vec<f64>,
     ) {
         match (left_label, right_label) {
@@ -281,10 +283,10 @@ impl Trainer {
                         if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
                             let left_fid = usize::try_from(left_fid.get()).unwrap();
                             let right_fid = right_fid.get();
-                            if bigram_fids.len() <= left_fid {
-                                bigram_fids.resize(left_fid + 1, HashMap::new());
+                            if bigram_weight_indices.len() <= left_fid {
+                                bigram_weight_indices.resize(left_fid + 1, HashMap::new());
                             }
-                            let features = &mut bigram_fids[left_fid];
+                            let features = &mut bigram_weight_indices[left_fid];
                             if let RawEntryMut::Vacant(v) =
                                 features.raw_entry_mut().from_key(&right_fid)
                             {
@@ -299,10 +301,10 @@ impl Trainer {
                 if let Some(feature_set) = provider.get_feature_set(left_label) {
                     for left_fid in feature_set.bigram_left().iter().flatten() {
                         let left_fid = usize::try_from(left_fid.get()).unwrap();
-                        if bigram_fids.len() <= left_fid {
-                            bigram_fids.resize(left_fid + 1, HashMap::new());
+                        if bigram_weight_indices.len() <= left_fid {
+                            bigram_weight_indices.resize(left_fid + 1, HashMap::new());
                         }
-                        let features = &mut bigram_fids[left_fid];
+                        let features = &mut bigram_weight_indices[left_fid];
                         if let RawEntryMut::Vacant(v) = features.raw_entry_mut().from_key(&0) {
                             v.insert(0, u32::try_from(weights.len()).unwrap());
                             weights.push(0.0);
@@ -314,10 +316,10 @@ impl Trainer {
                 if let Some(feature_set) = provider.get_feature_set(right_label) {
                     for right_fid in feature_set.bigram_right().iter().flatten() {
                         let right_fid = right_fid.get();
-                        if bigram_fids.is_empty() {
-                            bigram_fids.resize(1, HashMap::new());
+                        if bigram_weight_indices.is_empty() {
+                            bigram_weight_indices.resize(1, HashMap::new());
                         }
-                        let features = &mut bigram_fids[0];
+                        let features = &mut bigram_weight_indices[0];
                         if let RawEntryMut::Vacant(v) =
                             features.raw_entry_mut().from_key(&right_fid)
                         {
@@ -334,8 +336,8 @@ impl Trainer {
     fn update_features(
         lattice: &Lattice,
         provider: &FeatureProvider,
-        unigram_fids: &mut Vec<u32>,
-        bigram_fids: &mut Vec<HashMap<u32, u32>>,
+        unigram_weight_indices: &mut Vec<Option<NonZeroU32>>,
+        bigram_weight_indices: &mut Vec<HashMap<u32, u32>>,
         weights: &mut Vec<f64>,
     ) {
         for (i, node) in lattice.nodes().iter().enumerate() {
@@ -345,7 +347,7 @@ impl Trainer {
                         provider,
                         None,
                         Some(curr_edge.label),
-                        bigram_fids,
+                        bigram_weight_indices,
                         weights,
                     );
                 }
@@ -356,7 +358,7 @@ impl Trainer {
                         provider,
                         Some(curr_edge.label),
                         Some(next_edge.label),
-                        bigram_fids,
+                        bigram_weight_indices,
                         weights,
                     );
                 }
@@ -365,11 +367,16 @@ impl Trainer {
                         provider,
                         Some(curr_edge.label),
                         None,
-                        bigram_fids,
+                        bigram_weight_indices,
                         weights,
                     );
                 }
-                Self::update_unigram_feature(provider, curr_edge.label, unigram_fids, weights);
+                Self::update_unigram_feature(
+                    provider,
+                    curr_edge.label,
+                    unigram_weight_indices,
+                    weights,
+                );
             }
         }
     }
@@ -378,16 +385,16 @@ impl Trainer {
     #[allow(clippy::missing_panics_doc)]
     #[must_use]
     pub fn train(&self, lattices: &[Lattice], mut provider: FeatureProvider) -> RawModel {
-        let mut unigram_fids = vec![];
-        let mut bigram_fids = vec![];
+        let mut unigram_weight_indices = vec![];
+        let mut bigram_weight_indices = vec![];
         let mut weights_init = vec![];
 
         for lattice in lattices {
             Self::update_features(
                 lattice,
                 &provider,
-                &mut unigram_fids,
-                &mut bigram_fids,
+                &mut unigram_weight_indices,
+                &mut bigram_weight_indices,
                 &mut weights_init,
             );
         }
@@ -403,8 +410,8 @@ impl Trainer {
                 let loss_function = LatticesLoss::new(
                     lattices,
                     &provider,
-                    unigram_fids,
-                    bigram_fids,
+                    unigram_weight_indices,
+                    bigram_weight_indices,
                     self.n_threads,
                     None,
                 );
@@ -424,8 +431,8 @@ impl Trainer {
                 let loss_function = LatticesLoss::new(
                     lattices,
                     &provider,
-                    unigram_fids,
-                    bigram_fids,
+                    unigram_weight_indices,
+                    bigram_weight_indices,
                     self.n_threads,
                     Some(self.lambda),
                 );
@@ -440,43 +447,47 @@ impl Trainer {
             }
         }
 
-        let unigram_fids = loss_function_used.unigram_fids;
-        let bigram_fids = loss_function_used.bigram_fids;
+        let unigram_weight_indices = loss_function_used.unigram_weight_indices;
+        let bigram_weight_indices = loss_function_used.bigram_weight_indices;
 
         // Removes zero features
-        let mut feature_id_map = HashMap::new();
+        let mut weight_id_map = HashMap::new();
         let mut new_weights = vec![0.0];
         for (i, w) in weights.into_iter().enumerate() {
             if w.abs() < f64::EPSILON {
                 continue;
             }
-            feature_id_map.insert(
+            weight_id_map.insert(
                 u32::try_from(i).unwrap(),
                 u32::try_from(new_weights.len()).unwrap(),
             );
             new_weights.push(w);
         }
-        let mut new_unigram_fids = vec![];
-        for fid in unigram_fids {
-            new_unigram_fids.push(feature_id_map.get(&fid).and_then(|&i| NonZeroU32::new(i)));
+        let mut new_unigram_weight_indices = vec![];
+        for old_idx in unigram_weight_indices {
+            new_unigram_weight_indices.push(old_idx.and_then(|old_idx| {
+                weight_id_map
+                    .get(&(old_idx.get() - 1))
+                    .and_then(|&new_idx| NonZeroU32::new(new_idx))
+            }));
         }
-        let mut new_bigram_fids = vec![];
+        let mut new_bigram_weight_indices = vec![];
         let mut right_id_used = HashSet::new();
-        for fids in bigram_fids {
+        for fids in bigram_weight_indices {
             let mut new_fids = HashMap::new();
             for (k, v) in fids {
-                if let Some(&v) = feature_id_map.get(&v) {
+                if let Some(&v) = weight_id_map.get(&v) {
                     new_fids.insert(k, v);
                     right_id_used.insert(k);
                 }
             }
-            new_bigram_fids.push(new_fids);
+            new_bigram_weight_indices.push(new_fids);
         }
 
         for feature_set in &mut provider.feature_sets {
             let mut new_unigram = vec![];
             for &fid in feature_set.unigram() {
-                if new_unigram_fids
+                if new_unigram_weight_indices
                     .get(usize::from_u32(fid.get() - 1))
                     .copied()
                     .flatten()
@@ -488,7 +499,7 @@ impl Trainer {
             feature_set.unigram = new_unigram;
             for fid in &mut feature_set.bigram_left {
                 *fid = fid.filter(|fid| {
-                    !new_bigram_fids
+                    !new_bigram_weight_indices
                         .get(usize::from_u32(fid.get()))
                         .map_or(false, HashMap::is_empty)
                 });
@@ -498,7 +509,12 @@ impl Trainer {
             }
         }
 
-        RawModel::new(new_weights, new_unigram_fids, new_bigram_fids, provider)
+        RawModel::new(
+            new_weights,
+            new_unigram_weight_indices,
+            new_bigram_weight_indices,
+            provider,
+        )
     }
 }
 
@@ -555,7 +571,12 @@ mod tests {
         let loss_function = LatticesLoss::new(
             &lattices,
             &provider,
-            vec![1, 3, 5, 7],
+            vec![
+                NonZeroU32::new(2),
+                NonZeroU32::new(4),
+                NonZeroU32::new(6),
+                NonZeroU32::new(8),
+            ],
             vec![
                 hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
                 hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
@@ -584,7 +605,12 @@ mod tests {
         let loss_function = LatticesLoss::new(
             &lattices,
             &provider,
-            vec![1, 3, 5, 7],
+            vec![
+                NonZeroU32::new(2),
+                NonZeroU32::new(4),
+                NonZeroU32::new(6),
+                NonZeroU32::new(8),
+            ],
             vec![
                 hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
                 hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],

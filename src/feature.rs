@@ -13,7 +13,7 @@ pub fn apply_bigram<F>(
     left_label: Option<NonZeroU32>,
     right_label: Option<NonZeroU32>,
     provider: &FeatureProvider,
-    bigram_fids: &[HashMap<u32, u32>],
+    bigram_weight_indices: &[HashMap<u32, u32>],
     mut f: F,
 ) where
     F: FnMut(u32),
@@ -30,10 +30,11 @@ pub fn apply_bigram<F>(
                     if let (Some(left_fid), Some(right_fid)) = (left_fid, right_fid) {
                         let left_fid = usize::from_u32(left_fid.get());
                         let right_fid = right_fid.get();
-                        if let Some(&fid) =
-                            bigram_fids.get(left_fid).and_then(|hm| hm.get(&right_fid))
+                        if let Some(&widx) = bigram_weight_indices
+                            .get(left_fid)
+                            .and_then(|hm| hm.get(&right_fid))
                         {
-                            f(fid);
+                            f(widx);
                         }
                     }
                 }
@@ -44,8 +45,8 @@ pub fn apply_bigram<F>(
                 for &left_fid in feature_set.bigram_left() {
                     if let Some(left_fid) = left_fid {
                         let left_fid = usize::from_u32(left_fid.get());
-                        if let Some(&fid) = bigram_fids[left_fid].get(&0) {
-                            f(fid);
+                        if let Some(&widx) = bigram_weight_indices[left_fid].get(&0) {
+                            f(widx);
                         }
                     }
                 }
@@ -56,8 +57,8 @@ pub fn apply_bigram<F>(
                 for &right_fid in feature_set.bigram_right() {
                     if let Some(right_fid) = right_fid {
                         let right_fid = right_fid.get();
-                        if let Some(&fid) = bigram_fids[0].get(&right_fid) {
-                            f(fid);
+                        if let Some(&widx) = bigram_weight_indices[0].get(&right_fid) {
+                            f(widx);
                         }
                     }
                 }
