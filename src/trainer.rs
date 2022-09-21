@@ -450,9 +450,9 @@ impl Trainer {
         let unigram_weight_indices = loss_function_used.unigram_weight_indices;
         let bigram_weight_indices = loss_function_used.bigram_weight_indices;
 
-        // Removes zero features
+        // Removes zero weighted features
         let mut weight_id_map = HashMap::new();
-        let mut new_weights = vec![0.0];
+        let mut new_weights = vec![];
         for (i, w) in weights.into_iter().enumerate() {
             if w.abs() < f64::EPSILON {
                 continue;
@@ -468,7 +468,7 @@ impl Trainer {
             new_unigram_weight_indices.push(old_idx.and_then(|old_idx| {
                 weight_id_map
                     .get(&(old_idx.get() - 1))
-                    .and_then(|&new_idx| NonZeroU32::new(new_idx))
+                    .and_then(|&new_idx| NonZeroU32::new(new_idx + 1))
             }));
         }
         let mut new_bigram_weight_indices = vec![];
