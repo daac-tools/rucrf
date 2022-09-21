@@ -27,92 +27,91 @@ use rucrf::{Edge, FeatureProvider, FeatureSet, Lattice, Model, Trainer};
 // Test:
 // 水(mizu) の(no) 都(miyako)
 //
-// Features:
+// 1-gram features:
 // 京: 1, 都: 2, 東: 3, 浜: 4, の: 5, 水: 6
-//
-// Labels:
-// 京kyo: 1, 都to: 2, 東to: 3,  京kei: 4, 浜hin: 5, のno: 6, 都mikako: 7, 水mizu: 8
+// 2-gram features:
+// kyo: 1, to: 2, kei: 3, hin: 4, no: 5, miyako: 6, mizu: 7
 
 let mut provider = FeatureProvider::new();
-provider.add_feature_set(FeatureSet::new(
+let label_京kyo = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(1).unwrap()],
     &[NonZeroU32::new(1)],
     &[NonZeroU32::new(1)],
 ))?;
-provider.add_feature_set(FeatureSet::new(
+let label_都to = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(2).unwrap()],
     &[NonZeroU32::new(2)],
     &[NonZeroU32::new(2)],
 ))?;
-provider.add_feature_set(FeatureSet::new(
+let label_東to = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(3).unwrap()],
-    &[NonZeroU32::new(3)],
-    &[NonZeroU32::new(3)],
+    &[NonZeroU32::new(2)],
+    &[NonZeroU32::new(2)],
 ))?;
-provider.add_feature_set(FeatureSet::new(
+let label_京kei = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(1).unwrap()],
-    &[NonZeroU32::new(4)],
-    &[NonZeroU32::new(4)],
+    &[NonZeroU32::new(3)],
+    &[NonZeroU32::new(3)],
 ))?;
-provider.add_feature_set(FeatureSet::new(
+let label_浜hin = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(4).unwrap()],
-    &[NonZeroU32::new(5)],
-    &[NonZeroU32::new(5)],
+    &[NonZeroU32::new(4)],
+    &[NonZeroU32::new(4)],
 ))?;
-provider.add_feature_set(FeatureSet::new(
+let label_のno = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(5).unwrap()],
-    &[NonZeroU32::new(6)],
-    &[NonZeroU32::new(6)],
+    &[NonZeroU32::new(5)],
+    &[NonZeroU32::new(5)],
 ))?;
-provider.add_feature_set(FeatureSet::new(
+let label_都miyako = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(2).unwrap()],
-    &[NonZeroU32::new(7)],
-    &[NonZeroU32::new(7)],
+    &[NonZeroU32::new(6)],
+    &[NonZeroU32::new(6)],
 ))?;
-provider.add_feature_set(FeatureSet::new(
+let label_水mizu = provider.add_feature_set(FeatureSet::new(
     &[NonZeroU32::new(6).unwrap()],
-    &[NonZeroU32::new(8)],
-    &[NonZeroU32::new(8)],
+    &[NonZeroU32::new(7)],
+    &[NonZeroU32::new(7)],
 ))?;
 
 let mut lattices = vec![];
 
 // 京都 (kyo to)
 let mut lattice = Lattice::new(2)?;
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(1).unwrap()))?; // kyo
-lattice.add_edge(1, Edge::new(2, NonZeroU32::new(2).unwrap()))?; // to
+lattice.add_edge(0, Edge::new(1, label_京kyo))?;
+lattice.add_edge(1, Edge::new(2, label_都to))?;
 
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(4).unwrap()))?; // kei
-lattice.add_edge(1, Edge::new(2, NonZeroU32::new(7).unwrap()))?; // miyako
+lattice.add_edge(0, Edge::new(1, label_京kei))?;
+lattice.add_edge(1, Edge::new(2, label_都miyako))?;
 
 lattices.push(lattice);
 
 // 東京 (to kyo)
 let mut lattice = Lattice::new(2)?;
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(3).unwrap()))?; // to
-lattice.add_edge(1, Edge::new(2, NonZeroU32::new(1).unwrap()))?; // kyo
+lattice.add_edge(0, Edge::new(1, label_東to))?;
+lattice.add_edge(1, Edge::new(2, label_京kyo))?;
 
-lattice.add_edge(1, Edge::new(2, NonZeroU32::new(4).unwrap()))?; // kei
+lattice.add_edge(1, Edge::new(2, label_京kei))?;
 
 lattices.push(lattice);
 
 // 京浜 (kei hin)
 let mut lattice = Lattice::new(2)?;
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(4).unwrap()))?; // kei
-lattice.add_edge(1, Edge::new(2, NonZeroU32::new(5).unwrap()))?; // hin
+lattice.add_edge(0, Edge::new(1, label_京kei))?;
+lattice.add_edge(1, Edge::new(2, label_浜hin))?;
 
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(1).unwrap()))?; // kyo
+lattice.add_edge(0, Edge::new(1, label_京kyo))?;
 
 lattices.push(lattice);
 
 // 京の都 (kyo no miyako)
 let mut lattice = Lattice::new(3)?;
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(1).unwrap()))?; // kyo
-lattice.add_edge(1, Edge::new(2, NonZeroU32::new(6).unwrap()))?; // no
-lattice.add_edge(2, Edge::new(3, NonZeroU32::new(7).unwrap()))?; // miyako
+lattice.add_edge(0, Edge::new(1, label_京kyo))?;
+lattice.add_edge(1, Edge::new(2, label_のno))?;
+lattice.add_edge(2, Edge::new(3, label_都miyako))?;
 
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(4).unwrap()))?; // kei
-lattice.add_edge(2, Edge::new(3, NonZeroU32::new(2).unwrap()))?; // to
+lattice.add_edge(0, Edge::new(1, label_京kei))?;
+lattice.add_edge(2, Edge::new(3, label_都to))?;
 
 lattices.push(lattice);
 
@@ -122,17 +121,17 @@ let model = trainer.train(&lattices, provider);
 
 // 水の都 (mizu no miyako)
 let mut lattice = Lattice::new(3)?;
-lattice.add_edge(0, Edge::new(1, NonZeroU32::new(8).unwrap()))?; // mizu
-lattice.add_edge(1, Edge::new(2, NonZeroU32::new(6).unwrap()))?; // no
-lattice.add_edge(2, Edge::new(3, NonZeroU32::new(2).unwrap()))?; // to
-lattice.add_edge(2, Edge::new(3, NonZeroU32::new(7).unwrap()))?; // miyako
+lattice.add_edge(0, Edge::new(1, label_水mizu))?;
+lattice.add_edge(1, Edge::new(2, label_のno))?;
+lattice.add_edge(2, Edge::new(3, label_都to))?;
+lattice.add_edge(2, Edge::new(3, label_都miyako))?;
 
 let (path, _) = model.search_best_path(&lattice);
 
 assert_eq!(vec![
-    Edge::new(1, NonZeroU32::new(8).unwrap()),
-    Edge::new(2, NonZeroU32::new(6).unwrap()),
-    Edge::new(3, NonZeroU32::new(7).unwrap()),
+    Edge::new(1, label_水mizu),
+    Edge::new(2, label_のno),
+    Edge::new(3, label_都miyako),
 ], path);
 ```
 
