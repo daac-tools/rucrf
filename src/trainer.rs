@@ -405,7 +405,7 @@ impl Trainer {
             &provider,
             &unigram_weight_indices,
             &bigram_weight_indices,
-            &weights_init,
+            weights_init,
             self.regularization,
             self.lambda,
             self.max_iter,
