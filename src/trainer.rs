@@ -8,14 +8,15 @@ use std::thread;
 use argmin::core::{CostFunction, Gradient};
 use hashbrown::{hash_map::RawEntryMut, HashMap, HashSet};
 
+use crate::errors::{Result, RucrfError};
 use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
-use crate::utils::FromU32;
-use crate::errors::{Result, RucrfError};
 use crate::optimizers::lbfgs;
+use crate::utils::FromU32;
 
+#[derive(Clone)]
 pub struct LatticesLoss<'a> {
     lattices: &'a [Lattice],
     provider: &'a FeatureProvider,
@@ -44,11 +45,7 @@ impl<'a> LatticesLoss<'a> {
         }
     }
 
-    fn gradient_partial(
-        &self,
-        param: &Vec<f64>,
-        range: Range<usize>,
-    ) -> Vec<f64> {
+    fn gradient_partial(&self, param: &Vec<f64>, range: Range<usize>) -> Vec<f64> {
         let (s, r) = crossbeam_channel::unbounded();
         for lattice in &self.lattices[range] {
             s.send(lattice).unwrap();
