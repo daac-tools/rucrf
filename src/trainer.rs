@@ -1,44 +1,36 @@
-use core::num::NonZeroU32;
+use core::{num::NonZeroU32, ops::Range};
 
 use alloc::vec::Vec;
 
 use std::sync::Mutex;
 use std::thread;
 
-use argmin::{
-    core::{
-        observers::{ObserverMode, SlogLogger},
-        CostFunction, Executor, Gradient,
-    },
-    solver::{
-        linesearch::{condition::ArmijoCondition, BacktrackingLineSearch, MoreThuenteLineSearch},
-        quasinewton::LBFGS,
-    },
-};
+use argmin::core::{CostFunction, Gradient};
 use hashbrown::{hash_map::RawEntryMut, HashMap, HashSet};
 
-use crate::errors::{Result, RucrfError};
 use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
 use crate::utils::FromU32;
+use crate::errors::{Result, RucrfError};
+use crate::optimizers::lbfgs;
 
-struct LatticesLoss<'a> {
+pub struct LatticesLoss<'a> {
     lattices: &'a [Lattice],
     provider: &'a FeatureProvider,
-    unigram_weight_indices: Vec<Option<NonZeroU32>>,
-    bigram_weight_indices: Vec<HashMap<u32, u32>>,
+    unigram_weight_indices: &'a [Option<NonZeroU32>],
+    bigram_weight_indices: &'a [HashMap<u32, u32>],
     n_threads: usize,
     l2_lambda: Option<f64>,
 }
 
 impl<'a> LatticesLoss<'a> {
-    fn new(
+    pub const fn new(
         lattices: &'a [Lattice],
         provider: &'a FeatureProvider,
-        unigram_weight_indices: Vec<Option<NonZeroU32>>,
-        bigram_weight_indices: Vec<HashMap<u32, u32>>,
+        unigram_weight_indices: &'a [Option<NonZeroU32>],
+        bigram_weight_indices: &'a [HashMap<u32, u32>],
         n_threads: usize,
         l2_lambda: Option<f64>,
     ) -> Self {
@@ -50,6 +42,62 @@ impl<'a> LatticesLoss<'a> {
             n_threads,
             l2_lambda,
         }
+    }
+
+    fn gradient_partial(
+        &self,
+        param: &Vec<f64>,
+        range: Range<usize>,
+    ) -> Vec<f64> {
+        let (s, r) = crossbeam_channel::unbounded();
+        for lattice in &self.lattices[range] {
+            s.send(lattice).unwrap();
+        }
+        let gradients = Mutex::new(vec![0.0; param.len()]);
+        thread::scope(|scope| {
+            for _ in 0..self.n_threads {
+                scope.spawn(|| {
+                    let mut alphas = vec![];
+                    let mut betas = vec![];
+                    let mut local_gradients = vec![0.0; param.len()];
+                    while let Ok(lattice) = r.try_recv() {
+                        let z = forward_backward::calculate_alphas_betas(
+                            lattice,
+                            self.provider,
+                            param,
+                            self.unigram_weight_indices,
+                            self.bigram_weight_indices,
+                            &mut alphas,
+                            &mut betas,
+                        );
+                        forward_backward::update_gradient(
+                            lattice,
+                            self.provider,
+                            param,
+                            self.unigram_weight_indices,
+                            self.bigram_weight_indices,
+                            &alphas,
+                            &betas,
+                            z,
+                            &mut local_gradients,
+                        );
+                    }
+                    #[allow(clippy::significant_drop_in_scrutinee)]
+                    for (y, x) in gradients.lock().unwrap().iter_mut().zip(local_gradients) {
+                        *y += x;
+                    }
+                });
+            }
+        });
+        let mut gradients = gradients.into_inner().unwrap();
+
+        if let Some(lambda) = self.l2_lambda {
+            for (g, p) in gradients.iter_mut().zip(param) {
+                *g += lambda * *p;
+            }
+        }
+
+        gradients
     }
 }
 
@@ -74,8 +122,8 @@ impl<'a> CostFunction for LatticesLoss<'a> {
                             lattice,
                             self.provider,
                             param,
-                            &self.unigram_weight_indices,
-                            &self.bigram_weight_indices,
+                            self.unigram_weight_indices,
+                            self.bigram_weight_indices,
                             &mut alphas,
                             &mut betas,
                         );
@@ -83,8 +131,8 @@ impl<'a> CostFunction for LatticesLoss<'a> {
                             lattice,
                             self.provider,
                             param,
-                            &self.unigram_weight_indices,
-                            &self.bigram_weight_indices,
+                            self.unigram_weight_indices,
+                            self.bigram_weight_indices,
                             z,
                         );
                         loss_total += loss;
@@ -118,60 +166,13 @@ impl<'a> Gradient for LatticesLoss<'a> {
     type Gradient = Vec<f64>;
 
     fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, argmin::core::Error> {
-        let (s, r) = crossbeam_channel::unbounded();
-        for lattice in self.lattices {
-            s.send(lattice).unwrap();
-        }
-        let gradients = Mutex::new(vec![0.0; param.len()]);
-        thread::scope(|scope| {
-            for _ in 0..self.n_threads {
-                scope.spawn(|| {
-                    let mut alphas = vec![];
-                    let mut betas = vec![];
-                    let mut local_gradients = vec![0.0; param.len()];
-                    while let Ok(lattice) = r.try_recv() {
-                        let z = forward_backward::calculate_alphas_betas(
-                            lattice,
-                            self.provider,
-                            param,
-                            &self.unigram_weight_indices,
-                            &self.bigram_weight_indices,
-                            &mut alphas,
-                            &mut betas,
-                        );
-                        forward_backward::update_gradient(
-                            lattice,
-                            self.provider,
-                            param,
-                            &self.unigram_weight_indices,
-                            &self.bigram_weight_indices,
-                            &alphas,
-                            &betas,
-                            z,
-                            &mut local_gradients,
-                        );
-                    }
-                    #[allow(clippy::significant_drop_in_scrutinee)]
-                    for (y, x) in gradients.lock().unwrap().iter_mut().zip(local_gradients) {
-                        *y += x;
-                    }
-                });
-            }
-        });
-        let mut gradients = gradients.into_inner().unwrap();
-
-        if let Some(lambda) = self.l2_lambda {
-            for (g, p) in gradients.iter_mut().zip(param) {
-                *g += lambda * *p;
-            }
-        }
-
-        Ok(gradients)
+        Ok(self.gradient_partial(param, 0..self.lattices.len()))
     }
 }
 
 /// L1- or L2- regularization settings
 #[cfg_attr(docsrs, doc(cfg(feature = "train")))]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub enum Regularization {
     /// Performs L1-regularization.
     L1,
@@ -399,56 +400,17 @@ impl Trainer {
             );
         }
 
-        let weights;
-        let loss_function_used;
-
-        match self.regularization {
-            Regularization::L1 => {
-                let linesearch = BacktrackingLineSearch::new(ArmijoCondition::new(1e-4).unwrap())
-                    .rho(0.5)
-                    .unwrap();
-                let loss_function = LatticesLoss::new(
-                    lattices,
-                    &provider,
-                    unigram_weight_indices,
-                    bigram_weight_indices,
-                    self.n_threads,
-                    None,
-                );
-                let solver = LBFGS::new(linesearch, 7)
-                    .with_l1_regularization(self.lambda)
-                    .unwrap();
-                let res = Executor::new(loss_function, solver)
-                    .configure(|state| state.param(weights_init).max_iters(self.max_iter))
-                    .add_observer(SlogLogger::term(), ObserverMode::Always)
-                    .run()
-                    .unwrap();
-                weights = res.state.param.unwrap();
-                loss_function_used = res.problem.problem.unwrap();
-            }
-            Regularization::L2 => {
-                let linesearch = MoreThuenteLineSearch::new().with_c(1e-4, 0.9).unwrap();
-                let loss_function = LatticesLoss::new(
-                    lattices,
-                    &provider,
-                    unigram_weight_indices,
-                    bigram_weight_indices,
-                    self.n_threads,
-                    Some(self.lambda),
-                );
-                let solver = LBFGS::new(linesearch, 7);
-                let res = Executor::new(loss_function, solver)
-                    .configure(|state| state.param(weights_init).max_iters(self.max_iter))
-                    .add_observer(SlogLogger::term(), ObserverMode::Always)
-                    .run()
-                    .unwrap();
-                weights = res.state.param.unwrap();
-                loss_function_used = res.problem.problem.unwrap();
-            }
-        }
-
-        let unigram_weight_indices = loss_function_used.unigram_weight_indices;
-        let bigram_weight_indices = loss_function_used.bigram_weight_indices;
+        let weights = lbfgs::optimize(
+            lattices,
+            &provider,
+            &unigram_weight_indices,
+            &bigram_weight_indices,
+            &weights_init,
+            self.regularization,
+            self.lambda,
+            self.max_iter,
+            self.n_threads,
+        );
 
         // Removes zero weighted features
         let mut weight_id_map = HashMap::new();
@@ -568,22 +530,24 @@ mod tests {
         ];
         let provider = test_utils::generate_test_feature_provider();
         let lattices = vec![test_utils::generate_test_lattice()];
+        let unigram_weight_indices = vec![
+            NonZeroU32::new(2),
+            NonZeroU32::new(4),
+            NonZeroU32::new(6),
+            NonZeroU32::new(8),
+        ];
+        let bigram_weight_indices = vec![
+            hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
+            hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
+            hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
+            hashmap![0 => 18, 1 => 19, 2 => 20, 3 => 21, 4 => 22],
+            hashmap![0 => 23, 1 => 24, 2 => 25, 3 => 26, 4 => 27],
+        ];
         let loss_function = LatticesLoss::new(
             &lattices,
             &provider,
-            vec![
-                NonZeroU32::new(2),
-                NonZeroU32::new(4),
-                NonZeroU32::new(6),
-                NonZeroU32::new(8),
-            ],
-            vec![
-                hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
-                hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
-                hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
-                hashmap![0 => 18, 1 => 19, 2 => 20, 3 => 21, 4 => 22],
-                hashmap![0 => 23, 1 => 24, 2 => 25, 3 => 26, 4 => 27],
-            ],
+            &unigram_weight_indices,
+            &bigram_weight_indices,
             1,
             None,
         );
@@ -602,22 +566,24 @@ mod tests {
         ];
         let provider = test_utils::generate_test_feature_provider();
         let lattices = vec![test_utils::generate_test_lattice()];
+        let unigram_weight_indices = vec![
+            NonZeroU32::new(2),
+            NonZeroU32::new(4),
+            NonZeroU32::new(6),
+            NonZeroU32::new(8),
+        ];
+        let bigram_weight_indices = vec![
+            hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
+            hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
+            hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
+            hashmap![0 => 18, 1 => 19, 2 => 20, 3 => 21, 4 => 22],
+            hashmap![0 => 23, 1 => 24, 2 => 25, 3 => 26, 4 => 27],
+        ];
         let loss_function = LatticesLoss::new(
             &lattices,
             &provider,
-            vec![
-                NonZeroU32::new(2),
-                NonZeroU32::new(4),
-                NonZeroU32::new(6),
-                NonZeroU32::new(8),
-            ],
-            vec![
-                hashmap![0 => 28, 1 => 0, 2 => 2, 3 => 4, 4 => 6],
-                hashmap![0 => 8, 1 => 9, 2 => 10, 3 => 11, 4 => 12],
-                hashmap![0 => 13, 1 => 14, 2 => 15, 3 => 16, 4 => 17],
-                hashmap![0 => 18, 1 => 19, 2 => 20, 3 => 21, 4 => 22],
-                hashmap![0 => 23, 1 => 24, 2 => 25, 3 => 26, 4 => 27],
-            ],
+            &unigram_weight_indices,
+            &bigram_weight_indices,
             1,
             None,
         );
