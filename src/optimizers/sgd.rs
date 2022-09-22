@@ -22,10 +22,11 @@ pub fn optimize(
     weights_init: Vec<f64>,
     regularization: Regularization,
     lambda: f64,
+    batch_size: usize,
     max_iter: u64,
     n_threads: usize,
 ) -> Vec<f64> {
-    let loss_function = LatticesLoss::new(
+    let mut loss_function = LatticesLoss::new(
         lattices,
         provider,
         unigram_weight_indices,
@@ -51,10 +52,22 @@ pub fn optimize(
         .run()
         .unwrap();
 
-    let learning_rate = result.state.param.unwrap().l1_norm() / grad.l1_norm();
+    let init_learning_rate = result.state.param.unwrap().l1_norm() / grad.l1_norm();
 
-    dbg!(learning_rate);
-
-    panic!();
-    vec![]
+    let mut weights = weights_init;
+    for i in 0..max_iter {
+        loss_function.shuffle();
+        let mut start = 0;
+        while start < lattices.len() {
+            let grad = loss_function
+                .gradient_partial(&weights, start..lattices.len().min(start + batch_size));
+            let learning_rate =
+                init_learning_rate / ((i + 1) as f64 + start as f64 / lattices.len() as f64);
+            for (w, g) in weights.iter_mut().zip(&grad) {
+                *w -= g * learning_rate;
+            }
+            start += batch_size;
+        }
+    }
+    weights
 }
