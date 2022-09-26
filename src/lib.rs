@@ -146,7 +146,7 @@ pub mod errors;
 mod feature;
 mod lattice;
 mod model;
-mod optimizer;
+mod optimizers;
 mod utils;
 
 #[cfg(feature = "train")]

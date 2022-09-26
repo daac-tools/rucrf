@@ -13,7 +13,7 @@ use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
-use crate::optimizer::lbfgs;
+use crate::optimizers::lbfgs;
 use crate::utils::FromU32;
 
 pub struct LatticesLoss<'a> {
