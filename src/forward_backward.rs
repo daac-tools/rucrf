@@ -9,14 +9,48 @@ use crate::lattice::Lattice;
 use crate::math;
 use crate::utils::FromU32;
 
+#[derive(Copy, Clone)]
+pub struct Alpha {
+    pub prev_node: usize,
+    pub label: Option<NonZeroU32>,
+    pub score: f64,
+}
+
+impl Alpha {
+    const fn new(prev_node: usize, label: Option<NonZeroU32>, score: f64) -> Self {
+        Self {
+            prev_node,
+            label,
+            score,
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct Beta {
+    pub next_node: usize,
+    pub label: Option<NonZeroU32>,
+    pub score: f64,
+}
+
+impl Beta {
+    const fn new(next_node: usize, label: Option<NonZeroU32>, score: f64) -> Self {
+        Self {
+            next_node,
+            label,
+            score,
+        }
+    }
+}
+
 pub fn calculate_alphas_betas(
     lattice: &Lattice,
     provider: &FeatureProvider,
     weights: &[f64],
     unigram_weight_indices: &[Option<NonZeroU32>],
     bigram_weight_indices: &[HashMap<u32, u32>],
-    alphas: &mut Vec<Vec<(usize, Option<NonZeroU32>, f64)>>,
-    betas: &mut Vec<Vec<(usize, Option<NonZeroU32>, f64)>>,
+    alphas: &mut Vec<Vec<Alpha>>,
+    betas: &mut Vec<Vec<Beta>>,
 ) -> f64 {
     if alphas.len() < lattice.nodes().len() {
         alphas.resize(lattice.nodes().len(), vec![]);
@@ -28,8 +62,8 @@ pub fn calculate_alphas_betas(
     for x in &mut betas[..lattice.nodes().len()] {
         x.clear();
     }
-    alphas[0].push((0, None, 0.0));
-    betas[lattice.nodes().len() - 1].push((0, None, 0.0));
+    alphas[0].push(Alpha::new(0, None, 0.0));
+    betas[lattice.nodes().len() - 1].push(Beta::new(0, None, 0.0));
 
     // add 1-gram scores
     for (i, (node, betas)) in lattice.nodes().iter().zip(betas.iter_mut()).enumerate() {
@@ -42,17 +76,26 @@ pub fn calculate_alphas_betas(
                     score += weights[usize::from_u32(widx)];
                 }
             }
-            alphas[edge.target()].push((i, Some(edge.label), score));
-            betas.push((edge.target(), Some(edge.label), score));
+            alphas[edge.target()].push(Alpha::new(i, Some(edge.label), score));
+            betas.push(Beta::new(edge.target(), Some(edge.label), score));
         }
     }
 
     // alphas
     for i in 1..lattice.nodes().len() {
         for j in 0..alphas[i].len() {
-            let (k, curr_label, _) = alphas[i][j];
+            let Alpha {
+                prev_node,
+                label: curr_label,
+                ..
+            } = alphas[i][j];
             let mut score_total = f64::NEG_INFINITY;
-            for &(_, prev_label, mut score) in &alphas[k] {
+            for &Alpha {
+                label: prev_label,
+                mut score,
+                ..
+            } in &alphas[prev_node]
+            {
                 feature::apply_bigram(
                     prev_label,
                     curr_label,
@@ -64,16 +107,25 @@ pub fn calculate_alphas_betas(
                 );
                 score_total = math::logsumexp(score_total, score);
             }
-            alphas[i][j].2 += score_total;
+            alphas[i][j].score += score_total;
         }
     }
 
     // betas
     for i in (0..lattice.nodes().len() - 1).rev() {
         for j in 0..betas[i].len() {
-            let (k, curr_label, _) = betas[i][j];
+            let Beta {
+                next_node,
+                label: curr_label,
+                ..
+            } = betas[i][j];
             let mut score_total = f64::NEG_INFINITY;
-            for &(_, next_label, mut score) in &betas[k] {
+            for &Beta {
+                label: next_label,
+                mut score,
+                ..
+            } in &betas[next_node]
+            {
                 feature::apply_bigram(
                     curr_label,
                     next_label,
@@ -85,12 +137,17 @@ pub fn calculate_alphas_betas(
                 );
                 score_total = math::logsumexp(score_total, score);
             }
-            betas[i][j].2 += score_total;
+            betas[i][j].score += score_total;
         }
     }
 
     let mut score_total = f64::NEG_INFINITY;
-    for &(_, next_label, mut score) in &betas[0] {
+    for &Beta {
+        label: next_label,
+        mut score,
+        ..
+    } in &betas[0]
+    {
         feature::apply_bigram(None, next_label, provider, bigram_weight_indices, |widx| {
             score += weights[usize::from_u32(widx)];
         });
@@ -152,19 +209,19 @@ pub fn update_gradient(
     weights: &[f64],
     unigram_weight_indices: &[Option<NonZeroU32>],
     bigram_weight_indices: &[HashMap<u32, u32>],
-    alphas: &[Vec<(usize, Option<NonZeroU32>, f64)>],
-    betas: &[Vec<(usize, Option<NonZeroU32>, f64)>],
+    alphas: &[Vec<Alpha>],
+    betas: &[Vec<Beta>],
     z: f64,
     gradients: &mut [f64],
 ) {
     for (alphas, betas) in alphas.iter().zip(betas).take(lattice.nodes().len()) {
-        for &(_, prev_label, alpha) in alphas {
+        for alpha in alphas {
             let mut prob_total = 0.0;
-            for &(_, next_label, beta) in betas {
-                let mut log_prob = alpha + beta - z;
+            for beta in betas {
+                let mut log_prob = alpha.score + beta.score - z;
                 feature::apply_bigram(
-                    prev_label,
-                    next_label,
+                    alpha.label,
+                    beta.label,
                     provider,
                     bigram_weight_indices,
                     |widx| {
@@ -174,8 +231,8 @@ pub fn update_gradient(
                 let prob = log_prob.exp();
                 prob_total += prob;
                 feature::apply_bigram(
-                    prev_label,
-                    next_label,
+                    alpha.label,
+                    beta.label,
                     provider,
                     bigram_weight_indices,
                     |widx| {
@@ -183,7 +240,7 @@ pub fn update_gradient(
                     },
                 );
             }
-            if let Some(prev_label) = prev_label {
+            if let Some(prev_label) = alpha.label {
                 if let Some(feature_set) = provider.get_feature_set(prev_label) {
                     for &fid in feature_set.unigram() {
                         let fid = usize::try_from(fid.get() - 1).unwrap();
