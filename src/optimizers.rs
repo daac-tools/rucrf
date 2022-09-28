@@ -1,2 +1,2 @@
-pub mod lbfgs;
 pub mod adam;
+pub mod lbfgs;

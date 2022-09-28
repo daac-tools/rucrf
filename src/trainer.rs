@@ -13,7 +13,7 @@ use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
-use crate::optimizers::lbfgs;
+use crate::optimizers::{adam, lbfgs};
 use crate::utils::FromU32;
 
 pub struct LatticesLoss<'a> {
@@ -155,6 +155,14 @@ impl<'a> LatticesLoss<'a> {
             }
             loss_total += lambda * norm2 * 0.5;
         }
+
+        let mut n_nonzero = 0;
+        for w in param {
+            if w.abs() >= f64::EPSILON {
+                n_nonzero += 1;
+            }
+        }
+        dbg!(n_nonzero);
 
         loss_total
     }
@@ -390,12 +398,27 @@ impl Trainer {
             );
         }
 
-        let weights = lbfgs::optimize(
+        let weights = adam::optimize(
             lattices,
             &provider,
             &unigram_weight_indices,
             &bigram_weight_indices,
             &weights_init,
+            10,
+            self.n_threads,
+            100,
+            0.85,
+            0.001,
+            0.9,
+            0.999,
+            10e-8,
+        );
+        let weights = lbfgs::optimize(
+            lattices,
+            &provider,
+            &unigram_weight_indices,
+            &bigram_weight_indices,
+            &weights,
             self.regularization,
             self.lambda,
             self.max_iter,
