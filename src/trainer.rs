@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::thread;
 
 use hashbrown::{hash_map::RawEntryMut, HashMap, HashSet};
+use rand::seq::SliceRandom;
 
 use crate::errors::{Result, RucrfError};
 use crate::feature::FeatureProvider;
@@ -16,16 +17,18 @@ use crate::optimizers::lbfgs;
 use crate::utils::FromU32;
 
 pub struct LatticesLoss<'a> {
-    pub lattices: &'a [Lattice],
+    pub(crate) lattices: &'a [Lattice],
+    lattice_indices: Vec<usize>,
     provider: &'a FeatureProvider,
     unigram_weight_indices: &'a [Option<NonZeroU32>],
     bigram_weight_indices: &'a [HashMap<u32, u32>],
     n_threads: usize,
     l2_lambda: Option<f64>,
+    rng: rand::rngs::ThreadRng,
 }
 
 impl<'a> LatticesLoss<'a> {
-    pub const fn new(
+    pub fn new(
         lattices: &'a [Lattice],
         provider: &'a FeatureProvider,
         unigram_weight_indices: &'a [Option<NonZeroU32>],
@@ -35,18 +38,24 @@ impl<'a> LatticesLoss<'a> {
     ) -> Self {
         Self {
             lattices,
+            lattice_indices: (0..lattices.len()).collect(),
             provider,
             unigram_weight_indices,
             bigram_weight_indices,
             n_threads,
             l2_lambda,
+            rng: rand::thread_rng(),
         }
+    }
+
+    pub fn shuffle(&mut self) {
+        self.lattice_indices.shuffle(&mut self.rng);
     }
 
     pub fn gradient_partial(&self, param: &[f64], range: Range<usize>) -> Vec<f64> {
         let (s, r) = crossbeam_channel::unbounded();
-        for lattice in &self.lattices[range] {
-            s.send(lattice).unwrap();
+        for &i in &self.lattice_indices[range] {
+            s.send(&self.lattices[i]).unwrap();
         }
         let gradients = Mutex::new(vec![0.0; param.len()]);
         thread::scope(|scope| {
