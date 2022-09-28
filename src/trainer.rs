@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 use std::sync::Mutex;
 use std::thread;
 
-use argmin::core::{CostFunction, Gradient};
 use hashbrown::{hash_map::RawEntryMut, HashMap, HashSet};
 
 use crate::errors::{Result, RucrfError};
@@ -17,7 +16,7 @@ use crate::optimizers::lbfgs;
 use crate::utils::FromU32;
 
 pub struct LatticesLoss<'a> {
-    lattices: &'a [Lattice],
+    pub lattices: &'a [Lattice],
     provider: &'a FeatureProvider,
     unigram_weight_indices: &'a [Option<NonZeroU32>],
     bigram_weight_indices: &'a [HashMap<u32, u32>],
@@ -44,7 +43,7 @@ impl<'a> LatticesLoss<'a> {
         }
     }
 
-    fn gradient_partial(&self, param: &Vec<f64>, range: Range<usize>) -> Vec<f64> {
+    pub fn gradient_partial(&self, param: &[f64], range: Range<usize>) -> Vec<f64> {
         let (s, r) = crossbeam_channel::unbounded();
         for lattice in &self.lattices[range] {
             s.send(lattice).unwrap();
@@ -95,13 +94,8 @@ impl<'a> LatticesLoss<'a> {
 
         gradients
     }
-}
 
-impl<'a> CostFunction for LatticesLoss<'a> {
-    type Param = Vec<f64>;
-    type Output = f64;
-
-    fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+    pub fn cost(&self, param: &[f64]) -> f64 {
         let (s, r) = crossbeam_channel::unbounded();
         for lattice in self.lattices {
             s.send(lattice).unwrap();
@@ -153,16 +147,7 @@ impl<'a> CostFunction for LatticesLoss<'a> {
             loss_total += lambda * norm2 * 0.5;
         }
 
-        Ok(loss_total)
-    }
-}
-
-impl<'a> Gradient for LatticesLoss<'a> {
-    type Param = Vec<f64>;
-    type Gradient = Vec<f64>;
-
-    fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, argmin::core::Error> {
-        Ok(self.gradient_partial(param, 0..self.lattices.len()))
+        loss_total
     }
 }
 
@@ -549,7 +534,7 @@ mod tests {
         );
 
         let expected = logsumexp!(184.0, 194.0, 186.0, 176.0) - 184.0;
-        let result = loss_function.cost(&weights).unwrap();
+        let result = loss_function.cost(&weights);
 
         assert!((expected - result).abs() < f64::EPSILON);
     }
@@ -624,7 +609,7 @@ mod tests {
             expected[i] += prob4;
         }
 
-        let result = loss_function.gradient(&weights).unwrap();
+        let result = loss_function.gradient_partial(&weights, 0..lattices.len());
 
         let norm = expected
             .iter()

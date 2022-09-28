@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use argmin::{
     core::{
         observers::{ObserverMode, SlogLogger},
-        Executor,
+        CostFunction, Executor, Gradient,
     },
     solver::{
         linesearch::{condition::ArmijoCondition, BacktrackingLineSearch, MoreThuenteLineSearch},
@@ -17,6 +17,24 @@ use hashbrown::HashMap;
 use crate::feature::FeatureProvider;
 use crate::lattice::Lattice;
 use crate::trainer::{LatticesLoss, Regularization};
+
+impl<'a> CostFunction for LatticesLoss<'a> {
+    type Param = Vec<f64>;
+    type Output = f64;
+
+    fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
+        Ok(self.cost(param))
+    }
+}
+
+impl<'a> Gradient for LatticesLoss<'a> {
+    type Param = Vec<f64>;
+    type Gradient = Vec<f64>;
+
+    fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, argmin::core::Error> {
+        Ok(self.gradient_partial(param, 0..self.lattices.len()))
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn optimize(
