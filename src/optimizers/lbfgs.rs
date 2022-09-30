@@ -25,7 +25,7 @@ impl<'a> CostFunction for LatticesLoss<'a> {
     type Output = f64;
 
     fn cost(&self, param: &Self::Param) -> Result<Self::Output, argmin::core::Error> {
-        Ok(self.cost(param))
+        Ok(LatticesLoss::cost(self, param))
     }
 }
 
