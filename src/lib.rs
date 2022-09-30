@@ -146,13 +146,14 @@ pub mod errors;
 mod feature;
 mod lattice;
 mod model;
-mod optimizers;
 mod utils;
 
 #[cfg(feature = "train")]
 mod forward_backward;
 #[cfg(feature = "train")]
 mod math;
+#[cfg(feature = "train")]
+mod optimizers;
 #[cfg(feature = "train")]
 mod trainer;
 
