@@ -30,7 +30,6 @@ pub struct RawModel {
 }
 
 impl Decode for RawModel {
-    #[allow(clippy::type_complexity)]
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let weights = Decode::decode(decoder)?;
         let unigram_weight_indices: Vec<Option<NonZeroU32>> = Decode::decode(decoder)?;
@@ -47,9 +46,9 @@ impl Decode for RawModel {
         })
     }
 }
+bincode::impl_borrow_decode!(RawModel);
 
 impl Encode for RawModel {
-    #[allow(clippy::type_complexity)]
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         let bigram_weight_indices: Vec<Vec<(u32, u32)>> = self
             .bigram_weight_indices
@@ -307,7 +306,7 @@ impl Model for RawModel {
 }
 
 /// Represents a merged feature set.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Decode, Encode)]
 pub struct MergedFeatureSet {
     /// Weight.
     pub weight: f64,
@@ -327,6 +326,41 @@ pub struct MergedModel {
     pub left_conn_to_right_feats: Vec<Vec<Option<NonZeroU32>>>,
     /// Relation between the right connection IDs and the left bi-gram feature IDs.
     pub right_conn_to_left_feats: Vec<Vec<Option<NonZeroU32>>>,
+}
+
+impl Decode for MergedModel {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let feature_sets = Decode::decode(decoder)?;
+        let matrix: Vec<Vec<(u32, f64)>> = Decode::decode(decoder)?;
+        let left_conn_to_right_feats = Decode::decode(decoder)?;
+        let right_conn_to_left_feats = Decode::decode(decoder)?;
+        Ok(Self {
+            feature_sets,
+            matrix: matrix
+                .into_iter()
+                .map(|x| x.into_iter().collect())
+                .collect(),
+            left_conn_to_right_feats,
+            right_conn_to_left_feats,
+        })
+    }
+}
+bincode::impl_borrow_decode!(MergedModel);
+
+impl Encode for MergedModel {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        let matrix: Vec<Vec<(u32, f64)>> = self
+            .matrix
+            .clone()
+            .into_iter()
+            .map(|x| x.into_iter().collect())
+            .collect();
+        Encode::encode(&self.feature_sets, encoder)?;
+        Encode::encode(&matrix, encoder)?;
+        Encode::encode(&self.left_conn_to_right_feats, encoder)?;
+        Encode::encode(&self.right_conn_to_left_feats, encoder)?;
+        Ok(())
+    }
 }
 
 impl Model for MergedModel {
