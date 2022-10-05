@@ -13,7 +13,7 @@ keywords = ["crf"]
 categories = ["science", "algorithms", "no-std"]
 
 [dependencies]
-bincode = { version = "2.0.0-rc.1", feature = ["derive"] } # MIT
+bincode = { version = "2.0.0-rc.2", feature = ["derive"] } # MIT
 hashbrown = "0.12" # MIT or Apache-2.0
 
 argmin = { version = "0.7.0", optional = true } # MIT or Apache-2.0
