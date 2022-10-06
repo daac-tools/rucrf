@@ -4,8 +4,6 @@ use core::num::NonZeroU32;
 
 use alloc::vec::Vec;
 
-use argmin_math::{ArgminAdd, ArgminMul, ArgminSub};
-
 use hashbrown::HashMap;
 
 use crate::feature::FeatureProvider;
@@ -45,7 +43,7 @@ pub fn optimize(
     );
 
     let mut weights = weights_init;
-    let mut m = vec![0.0; weights.len()];
+    let mut ms = vec![0.0; weights.len()];
 
     let start_time = std::time::Instant::now();
 
@@ -70,8 +68,13 @@ pub fn optimize(
                     alpha.powf(i as f64 + start as f64 / lattices.len() as f64)
                 }
             };
-            m = m.mul(&momentum).sub(&grad.mul(&(learning_rate * eta)));
-            weights = weights.add(&m).sub(&weights.mul(&lambda));
+            for (m, g) in ms.iter_mut().zip(&grad) {
+                *m *= momentum;
+                *m += g * learning_rate * eta;
+            }
+            for (w, m) in weights.iter_mut().zip(&ms) {
+                *w -= m + learning_rate * lambda * *w;
+            }
             start += batch_size;
             cnt += 1;
         }
