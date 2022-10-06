@@ -6,22 +6,25 @@ use std::sync::Mutex;
 use std::thread;
 
 use hashbrown::{hash_map::RawEntryMut, HashMap, HashSet};
+use rand::{rngs::ThreadRng, seq::SliceRandom};
 
 use crate::errors::{Result, RucrfError};
 use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
-use crate::optimizers::lbfgs;
+use crate::optimizers::{lbfgs, momentum_sgd};
 use crate::utils::FromU32;
 
 pub struct LatticesLoss<'a> {
     pub lattices: &'a [Lattice],
+    indices: Vec<usize>,
     provider: &'a FeatureProvider,
     unigram_weight_indices: &'a [Option<NonZeroU32>],
     bigram_weight_indices: &'a [HashMap<u32, u32>],
     n_threads: usize,
     l2_lambda: Option<f64>,
+    rng: ThreadRng,
 }
 
 impl<'a> LatticesLoss<'a> {
@@ -35,18 +38,24 @@ impl<'a> LatticesLoss<'a> {
     ) -> Self {
         Self {
             lattices,
+            indices: (0..lattices.len()).collect(),
             provider,
             unigram_weight_indices,
             bigram_weight_indices,
             n_threads,
             l2_lambda,
+            rng: rand::thread_rng(),
         }
+    }
+
+    pub fn shuffle(&mut self) {
+        self.indices.shuffle(&mut self.rng);
     }
 
     pub fn gradient_partial(&self, param: &[f64], range: Range<usize>) -> Vec<f64> {
         let (s, r) = crossbeam_channel::unbounded();
-        for lattice in &self.lattices[range] {
-            s.send(lattice).unwrap();
+        for &i in &self.indices[range] {
+            s.send(&self.lattices[i]).unwrap();
         }
         let gradients = Mutex::new(vec![0.0; param.len()]);
         thread::scope(|scope| {
@@ -381,6 +390,7 @@ impl Trainer {
             );
         }
 
+        /*
         let weights = lbfgs::optimize(
             lattices,
             &provider,
@@ -391,6 +401,23 @@ impl Trainer {
             self.lambda,
             self.max_iter,
             self.n_threads,
+        );
+        */
+
+        let weights = momentum_sgd::optimize(
+            lattices,
+            &provider,
+            &unigram_weight_indices,
+            &bigram_weight_indices,
+            &weights_init,
+            self.regularization,
+            self.lambda,
+            self.max_iter,
+            self.n_threads,
+            1000,
+            0.9,
+            0.01,
+            momentum_sgd::LearningRateDecay::Exponential(0.85),
         );
 
         // Removes zero weighted features
