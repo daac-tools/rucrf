@@ -413,6 +413,7 @@ impl Trainer {
             self.regularization,
             self.lambda,
             self.max_iter,
+            1e-5,
             self.n_threads,
             1000,
             0.9,

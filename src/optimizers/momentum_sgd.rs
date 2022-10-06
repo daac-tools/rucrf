@@ -16,15 +16,16 @@ pub enum LearningRateDecay {
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn optimize(
+pub(crate) fn optimize(
     lattices: &[Lattice],
     provider: &FeatureProvider,
     unigram_weight_indices: &[Option<NonZeroU32>],
     bigram_weight_indices: &[HashMap<u32, u32>],
     weights_init: Vec<f64>,
-    _regularization: Regularization,
+    regularization: Regularization,
     lambda: f64,
     max_iter: u64,
+    stop_criteria: f64,
     n_threads: usize,
 
     // Adam parameters
@@ -48,32 +49,53 @@ pub fn optimize(
     let start_time = std::time::Instant::now();
 
     let mut cnt = 0;
-    for i in 0..max_iter {
+    let mut prev_cost = f64::INFINITY;
+    for epoch in 0..max_iter {
+        let cost = loss_function.cost(&weights);
+        let elapsed = start_time.elapsed().as_secs_f32();
+        eprintln!("epoch={epoch}, elapsed={elapsed}, cost={cost}");
+        if (cost - prev_cost).abs() / prev_cost < stop_criteria.abs() {
+            break;
+        }
+        prev_cost = cost;
+
         loss_function.shuffle();
         let mut start = 0;
         while start < lattices.len() {
-            if cnt % 100 == 0 {
-                let cost = loss_function.cost(&weights);
-                let elapsed = start_time.elapsed();
-                eprintln!("elapsed={}, cost={}", elapsed.as_secs_f32(), cost);
-            }
+            let learning_rate = match learning_rate_decay {
+                LearningRateDecay::Inverse => {
+                    1.0 / ((epoch + 1) as f64 + start as f64 / lattices.len() as f64)
+                }
+                LearningRateDecay::Exponential(alpha) => {
+                    alpha.powf(epoch as f64 + start as f64 / lattices.len() as f64)
+                }
+            };
 
             let grad = loss_function
                 .gradient_partial(&weights, start..lattices.len().min(start + batch_size));
-            let learning_rate = match learning_rate_decay {
-                LearningRateDecay::Inverse => {
-                    1.0 / ((i + 1) as f64 + start as f64 / lattices.len() as f64)
-                }
-                LearningRateDecay::Exponential(alpha) => {
-                    alpha.powf(i as f64 + start as f64 / lattices.len() as f64)
-                }
-            };
             for (m, g) in ms.iter_mut().zip(&grad) {
                 *m *= momentum;
                 *m += g * learning_rate * eta;
             }
             for (w, m) in weights.iter_mut().zip(&ms) {
-                *w -= m + learning_rate * lambda * *w;
+                *w -= m;
+            }
+            let reg_factor = learning_rate * lambda;
+            match regularization {
+                Regularization::L1 => {
+                    for (w, m) in weights.iter_mut().zip(&ms) {
+                        if w.is_sign_positive() {
+                            *w = (*w - reg_factor).max(0.0);
+                        } else {
+                            *w = (*w + reg_factor).min(0.0);
+                        }
+                    }
+                }
+                Regularization::L2 => {
+                    for (w, m) in weights.iter_mut().zip(&ms) {
+                        *w -= reg_factor * *w;
+                    }
+                }
             }
             start += batch_size;
             cnt += 1;
