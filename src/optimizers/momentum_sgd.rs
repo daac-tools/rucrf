@@ -48,7 +48,6 @@ pub(crate) fn optimize(
 
     let start_time = std::time::Instant::now();
 
-    let mut cnt = 0;
     let mut prev_cost = f64::INFINITY;
     for epoch in 0..max_iter {
         let cost = loss_function.cost(&weights);
@@ -71,8 +70,8 @@ pub(crate) fn optimize(
                 }
             };
 
-            let grad = loss_function
-                .gradient_partial(&weights, start..lattices.len().min(start + batch_size));
+            let range = start..lattices.len().min(start + batch_size);
+            let grad = loss_function.gradient_partial(&weights, range.clone());
             for (m, g) in ms.iter_mut().zip(&grad) {
                 *m *= momentum;
                 *m += g * learning_rate * eta;
@@ -80,10 +79,10 @@ pub(crate) fn optimize(
             for (w, m) in weights.iter_mut().zip(&ms) {
                 *w -= m;
             }
-            let reg_factor = learning_rate * lambda;
+            let reg_factor = learning_rate * lambda * range.len() as f64 / lattices.len() as f64;
             match regularization {
                 Regularization::L1 => {
-                    for (w, m) in weights.iter_mut().zip(&ms) {
+                    for w in &mut weights {
                         if w.is_sign_positive() {
                             *w = (*w - reg_factor).max(0.0);
                         } else {
@@ -92,13 +91,12 @@ pub(crate) fn optimize(
                     }
                 }
                 Regularization::L2 => {
-                    for (w, m) in weights.iter_mut().zip(&ms) {
+                    for w in &mut weights {
                         *w -= reg_factor * *w;
                     }
                 }
             }
             start += batch_size;
-            cnt += 1;
         }
     }
     weights
