@@ -28,7 +28,7 @@ pub struct LatticesLoss<'a> {
 }
 
 impl<'a> LatticesLoss<'a> {
-    pub const fn new(
+    pub fn new(
         lattices: &'a [Lattice],
         provider: &'a FeatureProvider,
         unigram_weight_indices: &'a [Option<NonZeroU32>],
