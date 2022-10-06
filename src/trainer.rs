@@ -13,7 +13,7 @@ use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
-use crate::optimizers::{lbfgs, momentum_sgd};
+use crate::optimizers::{lbfgs, momentum_sgd, sgd, LearningRateDecay};
 use crate::utils::FromU32;
 
 pub struct LatticesLoss<'a> {
@@ -404,13 +404,13 @@ impl Trainer {
         );
         */
 
+        eprintln!("Momentum SGD");
         let weights = momentum_sgd::optimize(
             lattices,
             &provider,
             &unigram_weight_indices,
             &bigram_weight_indices,
             weights_init,
-            self.regularization,
             self.lambda,
             self.max_iter,
             1e-5,
@@ -418,7 +418,23 @@ impl Trainer {
             1000,
             0.9,
             0.01,
-            momentum_sgd::LearningRateDecay::Exponential(0.85),
+            LearningRateDecay::Exponential(0.85),
+        );
+        eprintln!("SGD");
+        let weights = sgd::optimize(
+            lattices,
+            &provider,
+            &unigram_weight_indices,
+            &bigram_weight_indices,
+            weights,
+            self.regularization,
+            self.lambda,
+            self.max_iter,
+            1e-5,
+            self.n_threads,
+            1000,
+            0.01,
+            LearningRateDecay::Exponential(0.85),
         );
 
         // Removes zero weighted features
