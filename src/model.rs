@@ -418,7 +418,7 @@ impl Model for MergedModel {
             if let Some(next_id) = next_id {
                 score += self
                     .matrix
-                    .get(0)
+                    .first()
                     .and_then(|hm| hm.get(&next_id))
                     .unwrap_or(&0.0);
             }
