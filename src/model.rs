@@ -65,7 +65,7 @@ impl Encode for RawModel {
 
 impl RawModel {
     #[cfg(feature = "train")]
-    pub(crate) fn new(
+    pub(crate) const fn new(
         weights: Vec<f64>,
         unigram_weight_indices: Vec<Option<NonZeroU32>>,
         bigram_weight_indices: Vec<HashMap<u32, u32>>,
