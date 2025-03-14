@@ -29,7 +29,7 @@ pub struct RawModel {
     provider: FeatureProvider,
 }
 
-impl Decode for RawModel {
+impl<Context> Decode<Context> for RawModel {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let weights = Decode::decode(decoder)?;
         let unigram_weight_indices: Vec<Option<NonZeroU32>> = Decode::decode(decoder)?;
@@ -328,7 +328,7 @@ pub struct MergedModel {
     pub right_conn_to_left_feats: Vec<Vec<Option<NonZeroU32>>>,
 }
 
-impl Decode for MergedModel {
+impl<Context> Decode<Context> for MergedModel {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let feature_sets = Decode::decode(decoder)?;
         let matrix: Vec<Vec<(u32, f64)>> = Decode::decode(decoder)?;
