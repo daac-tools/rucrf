@@ -20,7 +20,7 @@ use crate::feature::FeatureProvider;
 use crate::lattice::Lattice;
 use crate::trainer::{LatticesLoss, Regularization};
 
-impl<'a> CostFunction for LatticesLoss<'a> {
+impl CostFunction for LatticesLoss<'_> {
     type Param = Vec<f64>;
     type Output = f64;
 
@@ -29,7 +29,7 @@ impl<'a> CostFunction for LatticesLoss<'a> {
     }
 }
 
-impl<'a> Gradient for LatticesLoss<'a> {
+impl Gradient for LatticesLoss<'_> {
     type Param = Vec<f64>;
     type Gradient = Vec<f64>;
 

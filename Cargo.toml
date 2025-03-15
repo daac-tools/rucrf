@@ -2,7 +2,7 @@
 name = "rucrf"
 version = "0.3.2"
 edition = "2021"
-rust-version = "1.63"
+rust-version = "1.85"
 authors = ["Koichi Akabe <vbkaisetsu@gmail.com>"]
 description = "Conditional Random Fields implemented in pure Rust"
 license = "MIT OR Apache-2.0"
@@ -13,7 +13,7 @@ keywords = ["crf"]
 categories = ["science", "algorithms", "no-std"]
 
 [dependencies]
-bincode = { version = "2.0.0-rc.2", features = ["derive"] } # MIT
+bincode = { version = "2.0.1", features = ["derive"] } # MIT
 hashbrown = "0.12" # MIT or Apache-2.0
 
 argmin = { version = "0.7.0", optional = true } # MIT or Apache-2.0

@@ -29,7 +29,7 @@ pub struct RawModel {
     provider: FeatureProvider,
 }
 
-impl Decode for RawModel {
+impl<Context> Decode<Context> for RawModel {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let weights = Decode::decode(decoder)?;
         let unigram_weight_indices: Vec<Option<NonZeroU32>> = Decode::decode(decoder)?;
@@ -65,7 +65,7 @@ impl Encode for RawModel {
 
 impl RawModel {
     #[cfg(feature = "train")]
-    pub(crate) fn new(
+    pub(crate) const fn new(
         weights: Vec<f64>,
         unigram_weight_indices: Vec<Option<NonZeroU32>>,
         bigram_weight_indices: Vec<HashMap<u32, u32>>,
@@ -328,7 +328,7 @@ pub struct MergedModel {
     pub right_conn_to_left_feats: Vec<Vec<Option<NonZeroU32>>>,
 }
 
-impl Decode for MergedModel {
+impl<Context> Decode<Context> for MergedModel {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         let feature_sets = Decode::decode(decoder)?;
         let matrix: Vec<Vec<(u32, f64)>> = Decode::decode(decoder)?;
@@ -418,7 +418,7 @@ impl Model for MergedModel {
             if let Some(next_id) = next_id {
                 score += self
                     .matrix
-                    .get(0)
+                    .first()
                     .and_then(|hm| hm.get(&next_id))
                     .unwrap_or(&0.0);
             }
