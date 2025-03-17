@@ -5,15 +5,13 @@ use core::num::NonZeroU32;
 use alloc::vec::Vec;
 
 use argmin::{
-    core::{
-        observers::{ObserverMode, SlogLogger},
-        CostFunction, Executor, Gradient,
-    },
+    core::{observers::ObserverMode, CostFunction, Executor, Gradient},
     solver::{
         linesearch::{condition::ArmijoCondition, BacktrackingLineSearch, MoreThuenteLineSearch},
         quasinewton::LBFGS,
     },
 };
+use argmin_observer_slog::SlogLogger;
 use hashbrown::HashMap;
 
 use crate::feature::FeatureProvider;

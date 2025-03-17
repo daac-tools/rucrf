@@ -2,7 +2,7 @@
 
 [![Crates.io](https://img.shields.io/crates/v/rucrf)](https://crates.io/crates/rucrf)
 [![Documentation](https://docs.rs/rucrf/badge.svg)](https://docs.rs/rucrf)
-[![Rust](https://img.shields.io/badge/rust-1.63%2B-blue.svg?maxAge=3600)](https://github.com/daac-tools/rucrf)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B-blue.svg?maxAge=3600)](https://github.com/daac-tools/rucrf)
 [![Build Status](https://github.com/daac-tools/rucrf/actions/workflows/rust.yml/badge.svg)](https://github.com/daac-tools/rucrf)
 
 *rucrf* contains a trainer and an estimator for Conditional Random Fields (CRFs).
