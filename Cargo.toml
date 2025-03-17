@@ -14,14 +14,15 @@ categories = ["science", "algorithms", "no-std"]
 
 [dependencies]
 bincode = { version = "2.0.1", features = ["derive"] } # MIT
-hashbrown = "0.12" # MIT or Apache-2.0
+hashbrown = "0.15" # MIT or Apache-2.0
 
-argmin = { version = "0.7.0", optional = true } # MIT or Apache-2.0
-argmin-math = { version = "0.2.0", optional = true } # MIT or Apache-2.0
-crossbeam-channel = { version = "0.5.6", optional = true } # MIT or Apache-2.0
+argmin = { version = "0.10.0", optional = true } # MIT or Apache-2.0
+argmin-math = { version = "0.4.0", optional = true } # MIT or Apache-2.0
+argmin-observer-slog = { version = "0.1.0", optional = true } # MIT or Apache-2.0
+crossbeam-channel = { version = "0.5.14", optional = true } # MIT or Apache-2.0
 
 [features]
 default = ["train"]
 alloc = []
 std = ["alloc"]
-train = ["std", "argmin", "argmin-math", "crossbeam-channel"]
+train = ["std", "argmin", "argmin-math", "argmin-observer-slog", "crossbeam-channel"]
