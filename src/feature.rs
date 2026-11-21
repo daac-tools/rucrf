@@ -131,14 +131,14 @@ impl FeatureProvider {
     /// Returns `true` if the manager has no item.
     #[inline(always)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.feature_sets.is_empty()
     }
 
     /// Returns the number of items.
     #[inline(always)]
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.feature_sets.len()
     }
 

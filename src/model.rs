@@ -18,6 +18,7 @@ use crate::utils::FromU32;
 /// The `Model` trait allows for searching the best path in the lattice.
 pub trait Model {
     /// Searches the best path and returns the path and its score.
+    #[must_use]
     fn search_best_path(&self, lattice: &Lattice) -> (Vec<Edge>, f64);
 }
 
@@ -80,7 +81,7 @@ impl RawModel {
     }
 
     /// Returns a mutable reference of the feature provider.
-    pub fn feature_provider(&mut self) -> &mut FeatureProvider {
+    pub const fn feature_provider(&mut self) -> &mut FeatureProvider {
         &mut self.provider
     }
 
@@ -234,7 +235,6 @@ impl RawModel {
 }
 
 impl Model for RawModel {
-    #[must_use]
     fn search_best_path(&self, lattice: &Lattice) -> (Vec<Edge>, f64) {
         let mut best_scores = vec![vec![]; lattice.nodes().len()];
         best_scores[lattice.nodes().len() - 1].push((0, 0, None, 0.0));
@@ -328,43 +328,47 @@ pub struct MergedModel {
     pub right_conn_to_left_feats: Vec<Vec<Option<NonZeroU32>>>,
 }
 
-impl<Context> Decode<Context> for MergedModel {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let feature_sets = Decode::decode(decoder)?;
-        let matrix: Vec<Vec<(u32, f64)>> = Decode::decode(decoder)?;
-        let left_conn_to_right_feats = Decode::decode(decoder)?;
-        let right_conn_to_left_feats = Decode::decode(decoder)?;
-        Ok(Self {
-            feature_sets,
-            matrix: matrix
-                .into_iter()
-                .map(|x| x.into_iter().collect())
-                .collect(),
-            left_conn_to_right_feats,
-            right_conn_to_left_feats,
-        })
+#[derive(Serialize)]
+struct MergedModelRef<'a> {
+    feature_sets: &'a [MergedFeatureSet],
+    matrix: Vec<Vec<(u32, f64)>>,
+    left_conn_to_right_feats: &'a [Vec<Option<NonZeroU32>>],
+    right_conn_to_left_feats: &'a [Vec<Option<NonZeroU32>>],
+}
+
+#[derive(Deserialize)]
+struct MergedModelData {
+    feature_sets: Vec<MergedFeatureSet>,
+    matrix: Vec<Vec<(u32, f64)>>,
+    left_conn_to_right_feats: Vec<Vec<Option<NonZeroU32>>>,
+    right_conn_to_left_feats: Vec<Vec<Option<NonZeroU32>>>,
+}
+
+impl Serialize for MergedModel {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        MergedModelRef {
+            feature_sets: &self.feature_sets,
+            matrix: hashmaps_to_sorted_vecs(&self.matrix),
+            left_conn_to_right_feats: &self.left_conn_to_right_feats,
+            right_conn_to_left_feats: &self.right_conn_to_left_feats,
+        }
+        .serialize(serializer)
     }
 }
-bincode::impl_borrow_decode!(MergedModel);
 
-impl Encode for MergedModel {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        let matrix: Vec<Vec<(u32, f64)>> = self
-            .matrix
-            .clone()
-            .into_iter()
-            .map(|x| x.into_iter().collect())
-            .collect();
-        Encode::encode(&self.feature_sets, encoder)?;
-        Encode::encode(&matrix, encoder)?;
-        Encode::encode(&self.left_conn_to_right_feats, encoder)?;
-        Encode::encode(&self.right_conn_to_left_feats, encoder)?;
-        Ok(())
+impl<'de> Deserialize<'de> for MergedModel {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let data = MergedModelData::deserialize(deserializer)?;
+        Ok(Self {
+            feature_sets: data.feature_sets,
+            matrix: vecs_to_hashmaps(data.matrix),
+            left_conn_to_right_feats: data.left_conn_to_right_feats,
+            right_conn_to_left_feats: data.right_conn_to_left_feats,
+        })
     }
 }
 
 impl Model for MergedModel {
-    #[must_use]
     fn search_best_path(&self, lattice: &Lattice) -> (Vec<Edge>, f64) {
         let mut best_scores = vec![vec![]; lattice.nodes().len()];
         best_scores[lattice.nodes().len() - 1].push((0, 0, None, 0.0));
@@ -510,9 +514,8 @@ mod tests {
         assert!((194.0 - score).abs() < f64::EPSILON);
     }
 
-    #[test]
-    fn test_hashed_search_best_path() {
-        let model = RawModel {
+    fn generate_test_raw_model() -> RawModel {
+        RawModel {
             weights: vec![
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
                 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 13.0, 24.0, 5.0, 26.0, 27.0, 6.0,
@@ -531,7 +534,12 @@ mod tests {
                 hashmap![0 => 23, 1 => 24, 2 => 25, 3 => 26, 4 => 27],
             ],
             provider: test_utils::generate_test_feature_provider(),
-        };
+        }
+    }
+
+    #[test]
+    fn test_hashed_search_best_path() {
+        let model = generate_test_raw_model();
         let merged_model = model.merge().unwrap();
 
         let lattice = test_utils::generate_test_lattice();

@@ -88,7 +88,7 @@ impl<'a> LatticesLoss<'a> {
 
         if let Some(lambda) = self.l2_lambda {
             for (g, p) in gradients.iter_mut().zip(param) {
-                *g += lambda * *p;
+                *g = lambda.mul_add(*p, *g);
             }
         }
 
@@ -142,9 +142,9 @@ impl<'a> LatticesLoss<'a> {
         if let Some(lambda) = self.l2_lambda {
             let mut norm2 = 0.0;
             for &p in param {
-                norm2 += p * p;
+                norm2 = p.mul_add(p, norm2);
             }
-            loss_total += lambda * norm2 * 0.5;
+            loss_total = (lambda * 0.5).mul_add(norm2, loss_total);
         }
 
         loss_total
@@ -734,13 +734,15 @@ mod tests {
         assert!(norm < 1e-12);
     }
 
-    fn prepare_sgd_test() -> (
+    type SgdTestData = (
         Vec<Lattice>,
         FeatureProvider,
         Vec<Option<NonZeroU32>>,
         Vec<HashMap<u32, u32>>,
         Vec<f64>,
-    ) {
+    );
+
+    fn prepare_sgd_test() -> SgdTestData {
         let provider = test_utils::generate_test_feature_provider();
         let lattices: Vec<_> = (0..5)
             .map(|_| test_utils::generate_test_lattice())
@@ -837,7 +839,7 @@ mod tests {
         let loss = LatticesLoss::new(&lattices, &provider, &uni, &bi, 1, None);
         let l1 = |w: &[f64]| lambda * w.iter().map(|x| x.abs()).sum::<f64>();
         assert!(loss.cost(&w) + l1(&w) < loss.cost(&w0) + l1(&w0));
-        assert!(w.iter().any(|&x| x == 0.0));
+        assert!(w.contains(&0.0));
         assert!(w.iter().any(|&x| x != 0.0));
     }
 
