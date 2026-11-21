@@ -1,8 +1,6 @@
 //! Module for L-BFGS optimizer.
 
-use core::num::NonZeroU32;
-
-use alloc::vec::Vec;
+use std::num::NonZeroU32;
 
 use argmin::{
     core::{observers::ObserverMode, CostFunction, Executor, Gradient},
