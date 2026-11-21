@@ -8,7 +8,6 @@
 //!   In Proceedings of ACL-IJCNLP 2009, pages 477–485.
 
 use std::num::NonZeroU32;
-
 use std::thread;
 use std::time::Instant;
 
