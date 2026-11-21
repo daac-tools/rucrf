@@ -2,13 +2,8 @@ use core::num::NonZeroU32;
 
 use alloc::vec::Vec;
 
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{DecodeError, EncodeError},
-    Decode, Encode,
-};
 use hashbrown::HashMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::errors::{Result, RucrfError};
 use crate::feature::{self, FeatureProvider};
@@ -30,37 +25,59 @@ pub struct RawModel {
     provider: FeatureProvider,
 }
 
-impl<Context> Decode<Context> for RawModel {
-    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
-        let weights = Decode::decode(decoder)?;
-        let unigram_weight_indices: Vec<Option<NonZeroU32>> = Decode::decode(decoder)?;
-        let bigram_weight_indices: Vec<Vec<(u32, u32)>> = Decode::decode(decoder)?;
-        let provider: FeatureProvider = Decode::decode(decoder)?;
-        Ok(Self {
-            weights,
-            unigram_weight_indices,
-            bigram_weight_indices: bigram_weight_indices
-                .into_iter()
-                .map(|v| v.into_iter().collect())
-                .collect(),
-            provider,
+/// Converts a list of hash maps into a list of sorted vectors to make the serialized data
+/// deterministic.
+fn hashmaps_to_sorted_vecs<V: Copy>(hms: &[HashMap<u32, V>]) -> Vec<Vec<(u32, V)>> {
+    hms.iter()
+        .map(|hm| {
+            let mut v: Vec<_> = hm.iter().map(|(&k, &v)| (k, v)).collect();
+            v.sort_unstable_by_key(|&(k, _)| k);
+            v
         })
+        .collect()
+}
+
+fn vecs_to_hashmaps<V>(vecs: Vec<Vec<(u32, V)>>) -> Vec<HashMap<u32, V>> {
+    vecs.into_iter().map(|v| v.into_iter().collect()).collect()
+}
+
+#[derive(Serialize)]
+struct RawModelRef<'a> {
+    weights: &'a [f64],
+    unigram_weight_indices: &'a [Option<NonZeroU32>],
+    bigram_weight_indices: Vec<Vec<(u32, u32)>>,
+    provider: &'a FeatureProvider,
+}
+
+#[derive(Deserialize)]
+struct RawModelData {
+    weights: Vec<f64>,
+    unigram_weight_indices: Vec<Option<NonZeroU32>>,
+    bigram_weight_indices: Vec<Vec<(u32, u32)>>,
+    provider: FeatureProvider,
+}
+
+impl Serialize for RawModel {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        RawModelRef {
+            weights: &self.weights,
+            unigram_weight_indices: &self.unigram_weight_indices,
+            bigram_weight_indices: hashmaps_to_sorted_vecs(&self.bigram_weight_indices),
+            provider: &self.provider,
+        }
+        .serialize(serializer)
     }
 }
-bincode::impl_borrow_decode!(RawModel);
 
-impl Encode for RawModel {
-    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        let bigram_weight_indices: Vec<Vec<(u32, u32)>> = self
-            .bigram_weight_indices
-            .iter()
-            .map(|v| v.iter().map(|(&k, &v)| (k, v)).collect())
-            .collect();
-        Encode::encode(&self.weights, encoder)?;
-        Encode::encode(&self.unigram_weight_indices, encoder)?;
-        Encode::encode(&bigram_weight_indices, encoder)?;
-        Encode::encode(&self.provider, encoder)?;
-        Ok(())
+impl<'de> Deserialize<'de> for RawModel {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let data = RawModelData::deserialize(deserializer)?;
+        Ok(Self {
+            weights: data.weights,
+            unigram_weight_indices: data.unigram_weight_indices,
+            bigram_weight_indices: vecs_to_hashmaps(data.bigram_weight_indices),
+            provider: data.provider,
+        })
     }
 }
 
@@ -306,7 +323,7 @@ impl Model for RawModel {
 }
 
 /// Represents a merged feature set.
-#[derive(Clone, Copy, Debug, Decode, Encode)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct MergedFeatureSet {
     /// Weight.
     pub weight: f64,
