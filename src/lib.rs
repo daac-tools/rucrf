@@ -130,6 +130,55 @@ assert_eq!(vec![
 # Ok(())
 # }
 ```
+
+### Training with SGD
+
+By default, the trainer uses L-BFGS (OWL-QN for L1-regularization).
+You can use mini-batch stochastic gradient descent (SGD) instead by specifying [`Optimizer::Sgd`].
+L1-regularization with SGD is performed by the cumulative penalty method
+([Tsuruoka et al., 2009](https://aclanthology.org/P09-1054/)), so the trained model is also sparse.
+
+When SGD is used, [`Trainer::max_iter()`] specifies the number of epochs.
+
+```rust
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# use std::num::NonZeroU32;
+# use rucrf::{Edge, FeatureProvider, FeatureSet, Lattice, Model};
+# let mut provider = FeatureProvider::new();
+# let label_a = provider.add_feature_set(FeatureSet::new(
+#     &[NonZeroU32::new(1).unwrap()],
+#     &[NonZeroU32::new(1)],
+#     &[NonZeroU32::new(1)],
+# ))?;
+# let label_b = provider.add_feature_set(FeatureSet::new(
+#     &[NonZeroU32::new(2).unwrap()],
+#     &[NonZeroU32::new(2)],
+#     &[NonZeroU32::new(2)],
+# ))?;
+# let mut lattice = Lattice::new(1)?;
+# lattice.add_edge(0, Edge::new(1, label_a))?;
+# lattice.add_edge(0, Edge::new(1, label_b))?;
+# let lattices = vec![lattice];
+use rucrf::{Optimizer, Regularization, Trainer};
+
+let trainer = Trainer::new()
+    .optimizer(Optimizer::Sgd)
+    .regularization(Regularization::L1, 0.01)?
+    .max_iter(20)? // number of epochs
+    .learning_rate(1.0)? // initial learning rate (default: 1.0)
+    .learning_rate_decay(0.9)? // multiplied to the learning rate per epoch (default: 0.9)
+    .batch_size(16)? // examples in a mini-batch are processed in parallel (default: 16)
+    .n_threads(4)?
+    .seed(0); // seed for shuffling examples (default: 0)
+let model = trainer.train(&lattices, provider);
+# let mut lattice = Lattice::new(1)?;
+# lattice.add_edge(0, Edge::new(1, label_b))?;
+# lattice.add_edge(0, Edge::new(1, label_a))?;
+# let (path, _) = model.search_best_path(&lattice);
+# assert_eq!(vec![Edge::new(1, label_a)], path);
+# Ok(())
+# }
+```
 "
 )]
 #![deny(missing_docs)]
@@ -165,4 +214,4 @@ pub use lattice::{Edge, Lattice};
 pub use model::{MergedFeatureSet, MergedModel, Model, RawModel};
 
 #[cfg(feature = "train")]
-pub use trainer::{Regularization, Trainer};
+pub use trainer::{Optimizer, Regularization, Trainer};
