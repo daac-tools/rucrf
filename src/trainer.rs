@@ -12,7 +12,7 @@ use crate::feature::FeatureProvider;
 use crate::forward_backward;
 use crate::lattice::Lattice;
 use crate::model::RawModel;
-use crate::optimizers::lbfgs;
+use crate::optimizers::{lbfgs, sgd};
 use crate::utils::FromU32;
 
 pub struct LatticesLoss<'a> {
@@ -74,7 +74,7 @@ impl<'a> LatticesLoss<'a> {
                             &alphas,
                             &betas,
                             z,
-                            &mut local_gradients,
+                            local_gradients.as_mut_slice(),
                         );
                     }
                     #[allow(clippy::significant_drop_in_scrutinee)]
@@ -88,7 +88,7 @@ impl<'a> LatticesLoss<'a> {
 
         if let Some(lambda) = self.l2_lambda {
             for (g, p) in gradients.iter_mut().zip(param) {
-                *g += lambda * *p;
+                *g = lambda.mul_add(*p, *g);
             }
         }
 
@@ -142,9 +142,9 @@ impl<'a> LatticesLoss<'a> {
         if let Some(lambda) = self.l2_lambda {
             let mut norm2 = 0.0;
             for &p in param {
-                norm2 += p * p;
+                norm2 = p.mul_add(p, norm2);
             }
-            loss_total += lambda * norm2 * 0.5;
+            loss_total = (lambda * 0.5).mul_add(norm2, loss_total);
         }
 
         loss_total
@@ -162,6 +162,25 @@ pub enum Regularization {
     L2,
 }
 
+/// Optimization algorithm.
+#[cfg_attr(docsrs, doc(cfg(feature = "train")))]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Optimizer {
+    /// L-BFGS (OWL-QN for L1-regularization), a batch optimizer.
+    ///
+    /// [`Trainer::max_iter()`] specifies the maximum number of iterations.
+    Lbfgs,
+
+    /// Mini-batch stochastic gradient descent.
+    ///
+    /// L1-regularization is performed by the cumulative penalty method (Tsuruoka et al., 2009).
+    /// The learning rate decays continuously and is multiplied by `learning_rate_decay` per
+    /// epoch.
+    ///
+    /// [`Trainer::max_iter()`] specifies the number of epochs.
+    Sgd,
+}
+
 /// CRF trainer.
 #[cfg_attr(docsrs, doc(cfg(feature = "train")))]
 pub struct Trainer {
@@ -169,6 +188,11 @@ pub struct Trainer {
     n_threads: usize,
     regularization: Regularization,
     lambda: f64,
+    optimizer: Optimizer,
+    learning_rate: f64,
+    learning_rate_decay: f64,
+    batch_size: usize,
+    seed: u64,
 }
 
 impl Trainer {
@@ -180,10 +204,17 @@ impl Trainer {
             n_threads: 1,
             regularization: Regularization::L1,
             lambda: 0.1,
+            optimizer: Optimizer::Lbfgs,
+            learning_rate: 1.0,
+            learning_rate_decay: 0.9,
+            batch_size: 16,
+            seed: 0,
         }
     }
 
     /// Sets the maximum number of iterations.
+    ///
+    /// When [`Optimizer::Sgd`] is used, this specifies the number of epochs.
     ///
     /// # Errors
     ///
@@ -221,6 +252,71 @@ impl Trainer {
         }
         self.n_threads = n_threads;
         Ok(self)
+    }
+
+    /// Sets the optimization algorithm. [`Optimizer::Lbfgs`] is used by default.
+    #[must_use]
+    pub const fn optimizer(mut self, optimizer: Optimizer) -> Self {
+        self.optimizer = optimizer;
+        self
+    }
+
+    /// Sets the initial learning rate. This is only used by [`Optimizer::Sgd`].
+    ///
+    /// Default to 1.0.
+    ///
+    /// The learning rate is applied to the mean gradient of a mini-batch.
+    ///
+    /// # Errors
+    ///
+    /// `learning_rate` must be > 0.
+    pub fn learning_rate(mut self, learning_rate: f64) -> Result<Self> {
+        if learning_rate <= 0.0 || !learning_rate.is_finite() {
+            return Err(RucrfError::invalid_argument("learning_rate must be > 0"));
+        }
+        self.learning_rate = learning_rate;
+        Ok(self)
+    }
+
+    /// Sets the decay rate of the learning rate per epoch. This is only used by
+    /// [`Optimizer::Sgd`].
+    ///
+    /// Default to 0.9.
+    ///
+    /// # Errors
+    ///
+    /// `learning_rate_decay` must be > 0 and <= 1.
+    pub fn learning_rate_decay(mut self, learning_rate_decay: f64) -> Result<Self> {
+        if !(learning_rate_decay > 0.0 && learning_rate_decay <= 1.0) {
+            return Err(RucrfError::invalid_argument(
+                "learning_rate_decay must be > 0 and <= 1",
+            ));
+        }
+        self.learning_rate_decay = learning_rate_decay;
+        Ok(self)
+    }
+
+    /// Sets the number of examples in a mini-batch. This is only used by [`Optimizer::Sgd`].
+    ///
+    /// Examples in a mini-batch are processed in parallel. Default to 16.
+    ///
+    /// # Errors
+    ///
+    /// `batch_size` must be >= 1.
+    pub const fn batch_size(mut self, batch_size: usize) -> Result<Self> {
+        if batch_size == 0 {
+            return Err(RucrfError::invalid_argument("batch_size must be >= 1"));
+        }
+        self.batch_size = batch_size;
+        Ok(self)
+    }
+
+    /// Sets the seed of the random number generator used for shuffling examples. This is only
+    /// used by [`Optimizer::Sgd`].
+    #[must_use]
+    pub const fn seed(mut self, seed: u64) -> Self {
+        self.seed = seed;
+        self
     }
 
     #[inline(always)]
@@ -381,17 +477,36 @@ impl Trainer {
             );
         }
 
-        let weights = lbfgs::optimize(
-            lattices,
-            &provider,
-            &unigram_weight_indices,
-            &bigram_weight_indices,
-            &weights_init,
-            self.regularization,
-            self.lambda,
-            self.max_iter,
-            self.n_threads,
-        );
+        let weights = match self.optimizer {
+            Optimizer::Lbfgs => lbfgs::optimize(
+                lattices,
+                &provider,
+                &unigram_weight_indices,
+                &bigram_weight_indices,
+                &weights_init,
+                self.regularization,
+                self.lambda,
+                self.max_iter,
+                self.n_threads,
+            ),
+            Optimizer::Sgd => sgd::optimize(
+                lattices,
+                &provider,
+                &unigram_weight_indices,
+                &bigram_weight_indices,
+                &weights_init,
+                self.regularization,
+                self.lambda,
+                self.max_iter,
+                self.n_threads,
+                sgd::SgdConfig {
+                    learning_rate: self.learning_rate,
+                    learning_rate_decay: self.learning_rate_decay,
+                    batch_size: self.batch_size,
+                    seed: self.seed,
+                },
+            ),
+        };
 
         // Removes zero weighted features
         let mut weight_id_map = HashMap::new();
@@ -617,5 +732,148 @@ mod tests {
             .fold(0.0, |acc, (a, b)| acc + (a - b).abs());
 
         assert!(norm < 1e-12);
+    }
+
+    type SgdTestData = (
+        Vec<Lattice>,
+        FeatureProvider,
+        Vec<Option<NonZeroU32>>,
+        Vec<HashMap<u32, u32>>,
+        Vec<f64>,
+    );
+
+    fn prepare_sgd_test() -> SgdTestData {
+        let provider = test_utils::generate_test_feature_provider();
+        let lattices: Vec<_> = (0..5)
+            .map(|_| test_utils::generate_test_lattice())
+            .collect();
+        let mut unigram_weight_indices = vec![];
+        let mut bigram_weight_indices = vec![];
+        let mut weights_init = vec![];
+        for lattice in &lattices {
+            Trainer::update_features(
+                lattice,
+                &provider,
+                &mut unigram_weight_indices,
+                &mut bigram_weight_indices,
+                &mut weights_init,
+            );
+        }
+        (
+            lattices,
+            provider,
+            unigram_weight_indices,
+            bigram_weight_indices,
+            weights_init,
+        )
+    }
+
+    fn sgd_config(batch_size: usize) -> sgd::SgdConfig {
+        sgd::SgdConfig {
+            learning_rate: 0.1,
+            learning_rate_decay: 0.9,
+            batch_size,
+            seed: 1,
+        }
+    }
+
+    #[test]
+    fn test_sgd_l2_converges_to_lbfgs() {
+        let (lattices, provider, uni, bi, w0) = prepare_sgd_test();
+        let loss = LatticesLoss::new(&lattices, &provider, &uni, &bi, 1, Some(1.0));
+        let w_lbfgs = lbfgs::optimize(
+            &lattices,
+            &provider,
+            &uni,
+            &bi,
+            &w0,
+            Regularization::L2,
+            1.0,
+            100,
+            1,
+        );
+        let config = sgd::SgdConfig {
+            learning_rate: 0.5,
+            learning_rate_decay: 0.95,
+            batch_size: 2,
+            seed: 1,
+        };
+        let w_sgd = sgd::optimize(
+            &lattices,
+            &provider,
+            &uni,
+            &bi,
+            &w0,
+            Regularization::L2,
+            1.0,
+            200,
+            1,
+            config,
+        );
+        let cost0 = loss.cost(&w0);
+        let cost_lbfgs = loss.cost(&w_lbfgs);
+        let cost_sgd = loss.cost(&w_sgd);
+        assert!(cost_lbfgs < cost0);
+        assert!(
+            (cost_sgd - cost_lbfgs).abs() < 1e-3,
+            "{cost_sgd} vs {cost_lbfgs}"
+        );
+    }
+
+    #[test]
+    fn test_sgd_l1_sparse() {
+        let (lattices, provider, uni, bi, w0) = prepare_sgd_test();
+        let lambda = 2.0;
+        let w = sgd::optimize(
+            &lattices,
+            &provider,
+            &uni,
+            &bi,
+            &w0,
+            Regularization::L1,
+            lambda,
+            50,
+            1,
+            sgd_config(1),
+        );
+        let loss = LatticesLoss::new(&lattices, &provider, &uni, &bi, 1, None);
+        let l1 = |w: &[f64]| lambda * w.iter().map(|x| x.abs()).sum::<f64>();
+        assert!(loss.cost(&w) + l1(&w) < loss.cost(&w0) + l1(&w0));
+        assert!(w.contains(&0.0));
+        assert!(w.iter().any(|&x| x != 0.0));
+    }
+
+    #[test]
+    fn test_sgd_threads_consistent() {
+        let (lattices, provider, uni, bi, w0) = prepare_sgd_test();
+        for regularization in [Regularization::L1, Regularization::L2] {
+            let w1 = sgd::optimize(
+                &lattices,
+                &provider,
+                &uni,
+                &bi,
+                &w0,
+                regularization,
+                0.1,
+                10,
+                1,
+                sgd_config(4),
+            );
+            let w3 = sgd::optimize(
+                &lattices,
+                &provider,
+                &uni,
+                &bi,
+                &w0,
+                regularization,
+                0.1,
+                10,
+                3,
+                sgd_config(4),
+            );
+            for (a, b) in w1.iter().zip(&w3) {
+                assert!((a - b).abs() < 1e-12);
+            }
+        }
     }
 }

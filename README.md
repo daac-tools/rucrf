@@ -8,7 +8,8 @@
 *rucrf* contains a trainer and an estimator for Conditional Random Fields (CRFs).
 This library supports:
 - [x] lattices with variable length edges,
-- [x] L1 and L2 regularization, and
+- [x] L1 and L2 regularization,
+- [x] L-BFGS and mini-batch stochastic gradient descent (SGD) optimizers, and
 - [x] multi-threading during training.
 
 ## Examples
@@ -133,6 +134,30 @@ assert_eq!(vec![
     Edge::new(2, label_のno),
     Edge::new(3, label_都miyako),
 ], path);
+```
+
+### Training with SGD
+
+By default, the trainer uses L-BFGS (OWL-QN for L1-regularization).
+You can use mini-batch stochastic gradient descent (SGD) instead by specifying `Optimizer::Sgd`.
+L1-regularization with SGD is performed by the cumulative penalty method
+([Tsuruoka et al., 2009](https://aclanthology.org/P09-1054/)), so the trained model is also sparse.
+
+When SGD is used, `max_iter()` specifies the number of epochs.
+
+```rust
+use rucrf::{Optimizer, Regularization, Trainer};
+
+let trainer = Trainer::new()
+    .optimizer(Optimizer::Sgd)
+    .regularization(Regularization::L1, 0.01)?
+    .max_iter(20)? // number of epochs
+    .learning_rate(1.0)? // initial learning rate (default: 1.0)
+    .learning_rate_decay(0.9)? // multiplied to the learning rate per epoch (default: 0.9)
+    .batch_size(16)? // examples in a mini-batch are processed in parallel (default: 16)
+    .n_threads(4)?
+    .seed(0); // seed for shuffling examples (default: 0)
+let model = trainer.train(&lattices, provider);
 ```
 
 ## License

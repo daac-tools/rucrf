@@ -1,8 +1,8 @@
 [package]
 name = "rucrf"
-version = "0.3.3"
+version = "0.4.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 authors = ["Koichi Akabe <vbkaisetsu@gmail.com>"]
 description = "Conditional Random Fields implemented in pure Rust"
 license = "MIT OR Apache-2.0"
@@ -13,13 +13,13 @@ keywords = ["crf"]
 categories = ["science", "algorithms", "no-std"]
 
 [dependencies]
-bincode = { version = "2.0.1", features = ["derive"] } # MIT
-hashbrown = "0.15" # MIT or Apache-2.0
+serde = { version = "1", default-features = false, features = ["alloc", "derive"] } # MIT or Apache-2.0
+hashbrown = "0.17" # MIT or Apache-2.0
 
-argmin = { version = "0.10.0", optional = true } # MIT or Apache-2.0
-argmin-math = { version = "0.4.0", optional = true } # MIT or Apache-2.0
-argmin-observer-slog = { version = "0.1.0", optional = true } # MIT or Apache-2.0
-crossbeam-channel = { version = "0.5.14", optional = true } # MIT or Apache-2.0
+argmin = { version = "0.11.0", optional = true } # MIT or Apache-2.0
+argmin-math = { version = "0.5.1", optional = true } # MIT or Apache-2.0
+argmin-observer-slog = { version = "0.2.0", optional = true } # MIT or Apache-2.0
+crossbeam-channel = { version = "0.5.17", optional = true } # MIT or Apache-2.0
 
 [features]
 default = ["train"]

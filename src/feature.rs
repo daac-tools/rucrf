@@ -2,8 +2,8 @@ use core::num::NonZeroU32;
 
 use alloc::vec::Vec;
 
-use bincode::{Decode, Encode};
 use hashbrown::HashMap;
+use serde::{Deserialize, Serialize};
 
 use crate::errors::{Result, RucrfError};
 use crate::utils::FromU32;
@@ -69,7 +69,7 @@ pub fn apply_bigram<F>(
 }
 
 /// Manages a set of features for each label.
-#[derive(Debug, Default, Decode, Encode)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct FeatureSet {
     pub(crate) unigram: Vec<NonZeroU32>,
     pub(crate) bigram_right: Vec<Option<NonZeroU32>>,
@@ -115,7 +115,7 @@ impl FeatureSet {
 }
 
 /// Manages the correspondence between edge labels and feature IDs.
-#[derive(Debug, Default, Decode, Encode)]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct FeatureProvider {
     pub(crate) feature_sets: Vec<FeatureSet>,
 }
@@ -131,14 +131,14 @@ impl FeatureProvider {
     /// Returns `true` if the manager has no item.
     #[inline(always)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.feature_sets.is_empty()
     }
 
     /// Returns the number of items.
     #[inline(always)]
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub const fn len(&self) -> usize {
         self.feature_sets.len()
     }
 
